@@ -68,6 +68,18 @@ export interface CreateQuizInput {
   shuffleAnswers: boolean;
 }
 
+export interface UpdateQuizInput {
+  title?: string;
+  description?: string | null;
+  categoryId?: string | null;
+  status?: QuizStatus;
+  visibility?: QuizVisibility;
+  defaultTimeLimitSec?: number;
+  scoringMode?: ScoringMode;
+  shuffleQuestions?: boolean;
+  shuffleAnswers?: boolean;
+}
+
 export interface AnswerOptionInput {
   text: string;
   imageUrl?: string | null;

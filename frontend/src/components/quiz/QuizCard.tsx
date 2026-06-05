@@ -1,8 +1,8 @@
-import { MoreHorizontal, Play, Settings2 } from "lucide-react";
+import { EyeOff, Play, Settings2, Upload } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { getErrorMessage } from "@/api/httpClient";
+import { updateQuiz } from "@/api/quizApi";
 import { createSession } from "@/api/sessionApi";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -10,6 +10,7 @@ import type { Quiz } from "@/types/quiz";
 
 interface QuizCardProps {
   quiz: Quiz;
+  onQuizUpdated: (quiz: Quiz) => void;
 }
 
 const statusLabels = {
@@ -18,10 +19,11 @@ const statusLabels = {
   ARCHIVED: "Archived",
 } as const;
 
-export function QuizCard({ quiz }: QuizCardProps) {
+export function QuizCard({ quiz, onQuizUpdated }: QuizCardProps) {
   const isPublished = quiz.status === "PUBLISHED";
   const navigate = useNavigate();
   const [isStarting, setIsStarting] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [error, setError] = useState("");
 
   const handleHost = async () => {
@@ -35,6 +37,27 @@ export function QuizCard({ quiz }: QuizCardProps) {
       setError(getErrorMessage(hostError));
     } finally {
       setIsStarting(false);
+    }
+  };
+
+  const handleStatusChange = async () => {
+    setIsUpdatingStatus(true);
+    setError("");
+
+    try {
+      const updatedQuiz = await updateQuiz(quiz.id, {
+        status: isPublished ? "DRAFT" : "PUBLISHED",
+      });
+      onQuizUpdated({
+        ...quiz,
+        ...updatedQuiz,
+        questionCount: quiz.questionCount,
+        sessionCount: quiz.sessionCount,
+      });
+    } catch (statusError) {
+      setError(getErrorMessage(statusError));
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -75,20 +98,34 @@ export function QuizCard({ quiz }: QuizCardProps) {
             Edit
           </Button>
         </Link>
-        {isPublished && (
-          <Button disabled={isStarting} onClick={handleHost} size="sm">
-            <Play className="mr-2 h-4 w-4" />
-            {isStarting ? "Starting..." : "Host"}
+        {quiz.status === "DRAFT" && (
+          <Button
+            disabled={isUpdatingStatus}
+            onClick={handleStatusChange}
+            size="sm"
+            variant="secondary"
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {isUpdatingStatus ? "Publishing..." : "Publish"}
           </Button>
         )}
-        <Button
-          aria-label="More quiz actions"
-          className="px-2"
-          size="sm"
-          variant="ghost"
-        >
-          <MoreHorizontal className="h-4 w-4 text-zinc-500" />
-        </Button>
+        {isPublished && (
+          <>
+            <Button
+              disabled={isUpdatingStatus}
+              onClick={handleStatusChange}
+              size="sm"
+              variant="outline"
+            >
+              <EyeOff className="mr-2 h-4 w-4" />
+              {isUpdatingStatus ? "Unpublishing..." : "Unpublish"}
+            </Button>
+            <Button disabled={isStarting} onClick={handleHost} size="sm">
+              <Play className="mr-2 h-4 w-4" />
+              {isStarting ? "Starting..." : "Host"}
+            </Button>
+          </>
+        )}
       </div>
     </article>
   );

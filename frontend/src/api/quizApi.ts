@@ -4,6 +4,7 @@ import type {
   Question,
   QuestionInput,
   Quiz,
+  UpdateQuizInput,
 } from "@/types/quiz";
 
 export async function getQuizzes() {
@@ -21,6 +22,14 @@ export async function createQuiz(input: CreateQuizInput) {
 
 export async function getQuiz(quizId: string) {
   const response = await httpClient<{ quiz: Quiz }>(`/quizzes/${quizId}`);
+  return response.quiz;
+}
+
+export async function updateQuiz(quizId: string, input: UpdateQuizInput) {
+  const response = await httpClient<{ quiz: Quiz }>(`/quizzes/${quizId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
   return response.quiz;
 }
 

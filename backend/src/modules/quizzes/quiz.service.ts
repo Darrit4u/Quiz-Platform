@@ -1,4 +1,8 @@
-import { Prisma, type QuestionType } from "@prisma/client";
+import {
+  Prisma,
+  type QuestionType,
+  type QuizStatus,
+} from "@prisma/client";
 import { prisma } from "../../config/prisma.js";
 import { HttpError } from "../../utils/httpError.js";
 import type { AuthUser } from "../users/user.types.js";
@@ -34,6 +38,7 @@ async function requireOwnedQuiz(userId: string, quizId: string) {
     select: {
       id: true,
       creatorId: true,
+      status: true,
       _count: {
         select: { sessions: true },
       },
@@ -49,6 +54,119 @@ async function requireOwnedQuiz(userId: string, quizId: string) {
   }
 
   return quiz;
+}
+
+function getPublishValidationErrors(
+  questions: Array<{
+    text: string;
+    type: QuestionType;
+    orderIndex: number;
+    answerOptions: Array<{
+      text: string;
+      isCorrect: boolean;
+    }>;
+  }>,
+) {
+  if (questions.length === 0) {
+    return ["Quiz must contain at least one question"];
+  }
+
+  const errors: string[] = [];
+
+  questions.forEach((question, index) => {
+    const questionNumber = index + 1;
+    const label = `Question ${questionNumber}`;
+
+    if (!question.text.trim()) {
+      errors.push(`${label} must contain text`);
+    }
+
+    if (question.answerOptions.length < 2) {
+      errors.push(`${label} must have at least two answer options`);
+    }
+
+    question.answerOptions.forEach((option, optionIndex) => {
+      if (!option.text.trim()) {
+        errors.push(
+          `${label}, answer option ${optionIndex + 1} must contain text`,
+        );
+      }
+    });
+
+    const correctOptionsCount = question.answerOptions.filter(
+      (option) => option.isCorrect,
+    ).length;
+
+    if (
+      question.type === "SINGLE_CHOICE" &&
+      correctOptionsCount !== 1
+    ) {
+      errors.push(`${label} must have exactly one correct answer`);
+    }
+
+    if (
+      question.type === "MULTIPLE_CHOICE" &&
+      correctOptionsCount < 1
+    ) {
+      errors.push(`${label} must have at least one correct answer`);
+    }
+  });
+
+  return errors;
+}
+
+async function validateStatusChange(
+  transaction: Prisma.TransactionClient,
+  quizId: string,
+  currentStatus: QuizStatus,
+  nextStatus: QuizStatus,
+) {
+  if (nextStatus === "PUBLISHED") {
+    const questions = await transaction.question.findMany({
+      where: { quizId },
+      orderBy: { orderIndex: "asc" },
+      select: {
+        text: true,
+        type: true,
+        orderIndex: true,
+        answerOptions: {
+          orderBy: { orderIndex: "asc" },
+          select: {
+            text: true,
+            isCorrect: true,
+          },
+        },
+      },
+    });
+    const validationErrors = getPublishValidationErrors(questions);
+
+    if (validationErrors.length > 0) {
+      throw new HttpError(
+        400,
+        "Quiz cannot be published",
+        validationErrors,
+      );
+    }
+  }
+
+  if (currentStatus === "PUBLISHED" && nextStatus === "DRAFT") {
+    const activeSession = await transaction.quizSession.findFirst({
+      where: {
+        quizId,
+        status: {
+          notIn: ["FINISHED", "CANCELLED"],
+        },
+      },
+      select: { id: true },
+    });
+
+    if (activeSession) {
+      throw new HttpError(
+        409,
+        "Cannot unpublish quiz while there is an active session.",
+      );
+    }
+  }
 }
 
 async function requireOwnedQuestion(
@@ -109,6 +227,13 @@ export async function listQuizzes(user: AuthUser) {
 }
 
 export async function createQuiz(userId: string, input: CreateQuizInput) {
+  if (input.status === "PUBLISHED") {
+    throw new HttpError(
+      400,
+      "Create the quiz as a draft, add questions, and publish it afterwards",
+    );
+  }
+
   const { categoryId, ...quizData } = input;
 
   return prisma.quiz.create({
@@ -151,22 +276,56 @@ export async function updateQuiz(
   quizId: string,
   input: UpdateQuizInput,
 ) {
-  await requireOwnedQuiz(userId, quizId);
   const { categoryId, ...quizData } = input;
 
-  return prisma.quiz.update({
-    where: { id: quizId },
-    data: {
-      ...quizData,
-      category:
-        categoryId === undefined
-          ? undefined
-          : categoryId === null
-            ? { disconnect: true }
-            : { connect: { id: categoryId } },
+  return prisma.$transaction(
+    async (transaction) => {
+      const currentQuiz = await transaction.quiz.findUnique({
+        where: { id: quizId },
+        select: {
+          creatorId: true,
+          status: true,
+        },
+      });
+
+      if (!currentQuiz) {
+        throw new HttpError(404, "Quiz not found");
+      }
+
+      if (currentQuiz.creatorId !== userId) {
+        throw new HttpError(403, "You can only manage your own quizzes");
+      }
+
+      if (input.status && input.status !== currentQuiz.status) {
+        await validateStatusChange(
+          transaction,
+          quizId,
+          currentQuiz.status,
+          input.status,
+        );
+      }
+
+      return transaction.quiz.update({
+        where: {
+          id: quizId,
+          creatorId: userId,
+        },
+        data: {
+          ...quizData,
+          category:
+            categoryId === undefined
+              ? undefined
+              : categoryId === null
+                ? { disconnect: true }
+                : { connect: { id: categoryId } },
+        },
+        include: { category: true },
+      });
     },
-    include: { category: true },
-  });
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    },
+  );
 }
 
 export async function deleteQuiz(userId: string, quizId: string) {

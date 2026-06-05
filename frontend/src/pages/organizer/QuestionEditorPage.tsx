@@ -6,6 +6,7 @@ import {
   Plus,
   Save,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -14,6 +15,7 @@ import {
   createQuestion,
   getQuiz,
   updateQuestion as updateQuestionRequest,
+  updateQuiz,
 } from "@/api/quizApi";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -114,6 +116,7 @@ export function QuestionEditorPage() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const question = questions[activeIndex];
@@ -247,6 +250,17 @@ export function QuestionEditorPage() {
     setError("");
   };
 
+  const persistQuestion = async (draftQuestion: Question) => {
+    if (!quizId) {
+      throw new Error("Quiz ID is missing");
+    }
+
+    const input = toQuestionInput(draftQuestion);
+    return draftQuestion.id.startsWith(NEW_QUESTION_PREFIX)
+      ? createQuestion(quizId, input)
+      : updateQuestionRequest(quizId, draftQuestion.id, input);
+  };
+
   const saveQuestion = async () => {
     if (!quizId || !question) {
       return;
@@ -262,10 +276,7 @@ export function QuestionEditorPage() {
     setIsSaving(true);
 
     try {
-      const input = toQuestionInput(question);
-      const savedQuestion = question.id.startsWith(NEW_QUESTION_PREFIX)
-        ? await createQuestion(quizId, input)
-        : await updateQuestionRequest(quizId, question.id, input);
+      const savedQuestion = await persistQuestion(question);
 
       setQuestions((current) =>
         current.map((item, index) =>
@@ -277,6 +288,51 @@ export function QuestionEditorPage() {
       setError(getErrorMessage(saveError));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const publishQuiz = async () => {
+    if (!quizId) {
+      return;
+    }
+
+    for (const [index, draftQuestion] of questions.entries()) {
+      const validationError = validateQuestion(draftQuestion);
+      if (validationError) {
+        setActiveIndex(index);
+        setError(`Question ${index + 1}: ${validationError}`);
+        return;
+      }
+    }
+
+    setError("");
+    setIsPublishing(true);
+
+    try {
+      const persistedQuestions = [...questions];
+
+      for (const [index, draftQuestion] of questions.entries()) {
+        persistedQuestions[index] = await persistQuestion(draftQuestion);
+        setQuestions([...persistedQuestions]);
+      }
+
+      const updatedQuiz = await updateQuiz(quizId, {
+        status: "PUBLISHED",
+      });
+      setQuiz((current) =>
+        current
+          ? {
+              ...current,
+              ...updatedQuiz,
+              questions: persistedQuestions,
+            }
+          : current,
+      );
+      navigate("/organizer", { replace: true });
+    } catch (publishError) {
+      setError(getErrorMessage(publishError));
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -314,14 +370,29 @@ export function QuestionEditorPage() {
             </p>
           </div>
         </div>
-        <Button disabled={isSaving} onClick={saveQuestion}>
-          {saved ? (
-            <Check className="mr-2 h-4 w-4" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
+        <div className="flex items-center gap-3">
+          {quiz.status === "DRAFT" && (
+            <Button
+              disabled={isSaving || isPublishing}
+              onClick={publishQuiz}
+              variant="secondary"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {isPublishing ? "Publishing..." : "Publish Quiz"}
+            </Button>
           )}
-          {isSaving ? "Saving..." : saved ? "Saved" : "Save Question"}
-        </Button>
+          <Button
+            disabled={isSaving || isPublishing}
+            onClick={saveQuestion}
+          >
+            {saved ? (
+              <Check className="mr-2 h-4 w-4" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            {isSaving ? "Saving..." : saved ? "Saved" : "Save Question"}
+          </Button>
+        </div>
       </div>
 
       {error && (
