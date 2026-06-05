@@ -21,6 +21,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"],
-  "exclude": ["src/figma-make"]
+  "include": ["src"]
 }

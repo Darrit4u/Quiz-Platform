@@ -1,20 +1,38 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { getErrorMessage } from "@/api/httpClient";
+import { getSessionByCode, joinSession } from "@/api/sessionApi";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { mockRoom } from "@/data/mockRooms";
 
 export function ParticipantJoinPage() {
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    navigate(`/participant/rooms/${mockRoom.id}/lobby`, {
-      state: { participantName: name, roomCode: code },
-    });
+    setIsJoining(true);
+    setError("");
+
+    try {
+      const normalizedCode = code.replace(/\s+/g, "").toUpperCase();
+      const session = await getSessionByCode(normalizedCode);
+      const result = await joinSession(normalizedCode, name);
+      navigate(`/participant/rooms/${session.id}/lobby`, {
+        state: {
+          participantName: result.participant.displayName,
+          roomCode: result.session.roomCode,
+        },
+      });
+    } catch (joinError) {
+      setError(getErrorMessage(joinError));
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   return (
@@ -53,9 +71,17 @@ export function ParticipantJoinPage() {
                   value={name}
                 />
               </label>
-              <Button className="h-12 w-full text-lg" size="lg" type="submit">
-                Join Room
+              <Button
+                className="h-12 w-full text-lg"
+                disabled={isJoining}
+                size="lg"
+                type="submit"
+              >
+                {isJoining ? "Joining..." : "Join Room"}
               </Button>
+              {error && (
+                <p className="text-center text-sm text-red-600">{error}</p>
+              )}
             </form>
           </CardContent>
         </Card>

@@ -5,39 +5,51 @@ import { AnswerOption } from "@/components/quiz/AnswerOption";
 import { QuestionCard } from "@/components/quiz/QuestionCard";
 import { Timer } from "@/components/quiz/Timer";
 import { Button } from "@/components/ui/Button";
-import { mockQuestions } from "@/data/mockQuestions";
-import { mockRoom } from "@/data/mockRooms";
+import { useSessionSocket } from "@/hooks/useSessionSocket";
 
 export function ParticipantQuestionPage() {
   const navigate = useNavigate();
   const { roomId } = useParams();
-  const question = mockQuestions[0];
-  const [selectedAnswers, setSelectedAnswers] = useState<string[]>([]);
-  const [submitted, setSubmitted] = useState(false);
-  const [seconds, setSeconds] = useState(question.timeLimit);
+  const {
+    sessionState,
+    currentQuestion: question,
+    answerStatus,
+    remainingSeconds,
+    error,
+    submitAnswer,
+  } = useSessionSocket(roomId);
+  const [selection, setSelection] = useState<{
+    questionId: string;
+    answerIds: string[];
+  }>({ questionId: "", answerIds: [] });
+  const selectedAnswers =
+    selection.questionId === question?.id ? selection.answerIds : [];
 
   useEffect(() => {
-    if (submitted || seconds === 0) {
-      return;
+    if (sessionState?.status === "FINISHED" && roomId) {
+      navigate(`/results/${roomId}`, { state: { from: "participant" } });
     }
-    const timer = window.setInterval(
-      () => setSeconds((value) => Math.max(0, value - 1)),
-      1000,
-    );
-    return () => window.clearInterval(timer);
-  }, [seconds, submitted]);
+  }, [navigate, roomId, sessionState?.status]);
 
   const selectAnswer = (answerId: string) => {
-    setSelectedAnswers(
-      question.type === "single"
-        ? [answerId]
-        : selectedAnswers.includes(answerId)
-          ? selectedAnswers.filter((id) => id !== answerId)
-          : [...selectedAnswers, answerId],
-    );
+    if (!question) {
+      return;
+    }
+    setSelection({
+      questionId: question.id,
+      answerIds:
+        question.type === "SINGLE_CHOICE"
+          ? [answerId]
+          : selectedAnswers.includes(answerId)
+            ? selectedAnswers.filter((id) => id !== answerId)
+            : [...selectedAnswers, answerId],
+    });
   };
 
-  if (submitted) {
+  if (
+    answerStatus.state === "accepted" &&
+    sessionState?.status !== "SHOWING_ANSWER"
+  ) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
         <div className="w-full max-w-md space-y-6 text-center">
@@ -50,18 +62,22 @@ export function ParticipantQuestionPage() {
           <p className="text-zinc-500">
             Waiting for other participants and the host to proceed...
           </p>
-          <Button
-            className="mt-12 text-zinc-400"
-            onClick={() =>
-              navigate(`/results/${roomId ?? mockRoom.id}`, {
-                state: { from: "participant" },
-              })
-            }
-            size="sm"
-            variant="ghost"
-          >
-            Demo: Go to Results
-          </Button>
+          <p className="text-sm font-medium text-violet-700">
+            Current score: {answerStatus.currentScore}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!question) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
+        <div className="text-center">
+          <p className="font-medium text-zinc-900">
+            Waiting for the next question...
+          </p>
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </div>
       </main>
     );
@@ -74,13 +90,18 @@ export function ParticipantQuestionPage() {
           <span className="text-sm font-medium text-zinc-500">
             Question 1 of 10
           </span>
-          <Timer seconds={seconds} />
+          <Timer seconds={remainingSeconds} />
         </div>
 
         <QuestionCard className="flex-1" question={question.text}>
           <div className="grid flex-1 grid-cols-2 gap-4">
-            {question.answers.map((answer) => (
+            {question.options.map((answer) => (
               <AnswerOption
+                correct={question.correctOptionIds?.includes(answer.id)}
+                disabled={
+                  answerStatus.state === "accepted" ||
+                  sessionState?.status !== "QUESTION_ACTIVE"
+                }
                 key={answer.id}
                 onSelect={() => selectAnswer(answer.id)}
                 selected={selectedAnswers.includes(answer.id)}
@@ -92,12 +113,27 @@ export function ParticipantQuestionPage() {
 
         <Button
           className="h-14 w-full text-lg"
-          disabled={selectedAnswers.length === 0 || seconds === 0}
-          onClick={() => setSubmitted(true)}
+          disabled={
+            selectedAnswers.length === 0 ||
+            remainingSeconds === 0 ||
+            answerStatus.state === "pending" ||
+            sessionState?.status !== "QUESTION_ACTIVE"
+          }
+          onClick={() => submitAnswer(question.id, selectedAnswers)}
           size="lg"
         >
-          Submit Answer
+          {answerStatus.state === "pending" ? "Submitting..." : "Submit Answer"}
         </Button>
+        {answerStatus.state === "rejected" && (
+          <p className="text-center text-sm text-red-600">
+            {answerStatus.reason}
+          </p>
+        )}
+        {sessionState?.status === "SHOWING_ANSWER" && question.explanation && (
+          <p className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+            {question.explanation}
+          </p>
+        )}
       </div>
     </main>
   );

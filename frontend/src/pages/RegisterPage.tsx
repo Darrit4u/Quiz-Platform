@@ -1,17 +1,41 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
+import { getErrorMessage } from "@/api/httpClient";
+import { useAuth } from "@/auth/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { cn } from "@/lib/cn";
-import type { UserRole } from "@/types/user";
+import type { User, UserRole } from "@/types/user";
+
+type RegistrationRole = Exclude<UserRole, "ADMIN">;
+
+function getDestination(user: User) {
+  return user.role === "PARTICIPANT" ? "/participant/join" : "/organizer";
+}
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const [role, setRole] = useState<UserRole>("organizer");
+  const { register } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<RegistrationRole>("ORGANIZER");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    navigate(role === "organizer" ? "/organizer" : "/participant/join");
+    setError("");
+    setIsSubmitting(true);
+
+    try {
+      const user = await register({ name, email, password, role });
+      navigate(getDestination(user), { replace: true });
+    } catch (submitError) {
+      setError(getErrorMessage(submitError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -28,15 +52,36 @@ export function RegisterPage() {
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
           <span>Full Name</span>
-          <Input placeholder="Jane Doe" required />
+          <Input
+            autoComplete="name"
+            minLength={2}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Jane Doe"
+            required
+            value={name}
+          />
         </label>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
           <span>Email</span>
-          <Input placeholder="name@company.com" required type="email" />
+          <Input
+            autoComplete="email"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="name@company.com"
+            required
+            type="email"
+            value={email}
+          />
         </label>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
           <span>Password</span>
-          <Input minLength={4} required type="password" />
+          <Input
+            autoComplete="new-password"
+            minLength={8}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            type="password"
+            value={password}
+          />
         </label>
 
         <fieldset className="space-y-3 pt-2">
@@ -47,11 +92,11 @@ export function RegisterPage() {
             <button
               className={cn(
                 "rounded-lg border p-4 font-medium transition-colors",
-                role === "organizer"
+                role === "ORGANIZER"
                   ? "border-violet-600 bg-violet-50 text-violet-700"
                   : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
               )}
-              onClick={() => setRole("organizer")}
+              onClick={() => setRole("ORGANIZER")}
               type="button"
             >
               Host Quizzes
@@ -59,11 +104,11 @@ export function RegisterPage() {
             <button
               className={cn(
                 "rounded-lg border p-4 font-medium transition-colors",
-                role === "participant"
+                role === "PARTICIPANT"
                   ? "border-violet-600 bg-violet-50 text-violet-700"
                   : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
               )}
-              onClick={() => setRole("participant")}
+              onClick={() => setRole("PARTICIPANT")}
               type="button"
             >
               Join Quizzes
@@ -71,8 +116,18 @@ export function RegisterPage() {
           </div>
         </fieldset>
 
-        <Button className="mt-4 w-full" type="submit">
-          Create Account
+        {error && (
+          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        )}
+
+        <Button
+          className="mt-4 w-full"
+          disabled={isSubmitting}
+          type="submit"
+        >
+          {isSubmitting ? "Creating Account..." : "Create Account"}
         </Button>
       </form>
 

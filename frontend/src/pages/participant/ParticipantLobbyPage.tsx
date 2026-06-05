@@ -1,8 +1,8 @@
 import { CheckCircle2, User } from "lucide-react";
+import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
-import { mockRoom } from "@/data/mockRooms";
+import { useSessionSocket } from "@/hooks/useSessionSocket";
 
 interface JoinState {
   participantName?: string;
@@ -14,6 +14,18 @@ export function ParticipantLobbyPage() {
   const { roomId } = useParams();
   const state = location.state as JoinState | null;
   const participantName = state?.participantName || "Alex Chen";
+  const { sessionState, error } = useSessionSocket(roomId);
+
+  useEffect(() => {
+    if (sessionState?.status === "QUESTION_ACTIVE" && roomId) {
+      navigate(`/participant/rooms/${roomId}/question`, {
+        state: { participantName },
+      });
+    }
+    if (sessionState?.status === "FINISHED" && roomId) {
+      navigate(`/results/${roomId}`, { state: { from: "participant" } });
+    }
+  }, [navigate, participantName, roomId, sessionState?.status]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
@@ -40,9 +52,11 @@ export function ParticipantLobbyPage() {
             <div className="h-px bg-zinc-100" />
             <div>
               <p className="text-sm font-medium text-zinc-900">
-                Q3 All-Hands Engineering Trivia
+                {sessionState?.quizTitle ?? "Loading quiz..."}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">Hosted by Jane Doe</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Room {sessionState?.roomCode ?? "..."}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -60,21 +74,8 @@ export function ParticipantLobbyPage() {
           <p className="text-sm font-medium uppercase tracking-widest text-zinc-500">
             Waiting for host to start...
           </p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
-
-        <Button
-          className="mt-12 text-zinc-400"
-          onClick={() =>
-            navigate(
-              `/participant/rooms/${roomId ?? mockRoom.id}/question`,
-              { state: { participantName } },
-            )
-          }
-          size="sm"
-          variant="ghost"
-        >
-          Demo: Simulate Start
-        </Button>
       </div>
     </main>
   );

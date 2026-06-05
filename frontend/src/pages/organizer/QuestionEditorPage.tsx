@@ -7,34 +7,147 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { getErrorMessage } from "@/api/httpClient";
+import {
+  createQuestion,
+  getQuiz,
+  updateQuestion as updateQuestionRequest,
+} from "@/api/quizApi";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { mockQuestions } from "@/data/mockQuestions";
 import { cn } from "@/lib/cn";
-import type { Answer, Question, QuestionType } from "@/types/quiz";
+import type {
+  AnswerOption,
+  Question,
+  QuestionInput,
+  QuestionType,
+  Quiz,
+} from "@/types/quiz";
 
-function cloneQuestion(question: Question): Question {
+const NEW_QUESTION_PREFIX = "new-question-";
+
+function createDraftQuestion(orderIndex: number, timeLimitSec = 30): Question {
+  const timestamp = Date.now();
+
   return {
-    ...question,
-    answers: question.answers.map((answer) => ({ ...answer })),
+    id: `${NEW_QUESTION_PREFIX}${timestamp}`,
+    text: "New question",
+    imageUrl: null,
+    type: "SINGLE_CHOICE",
+    timeLimitSec,
+    points: 1000,
+    orderIndex,
+    explanation: null,
+    answerOptions: [
+      {
+        id: `new-answer-${timestamp}-1`,
+        text: "Option 1",
+        imageUrl: null,
+        isCorrect: true,
+        orderIndex: 1,
+      },
+      {
+        id: `new-answer-${timestamp}-2`,
+        text: "Option 2",
+        imageUrl: null,
+        isCorrect: false,
+        orderIndex: 2,
+      },
+    ],
+  };
+}
+
+function validateQuestion(question: Question) {
+  if (!question.text.trim()) {
+    return "Question text is required";
+  }
+
+  if (question.answerOptions.length < 2) {
+    return "A question must have at least two answer options";
+  }
+
+  if (question.answerOptions.some((option) => !option.text.trim())) {
+    return "Every answer option must contain text";
+  }
+
+  const correctCount = question.answerOptions.filter(
+    (option) => option.isCorrect,
+  ).length;
+
+  if (question.type === "SINGLE_CHOICE" && correctCount !== 1) {
+    return "Single-choice questions must have exactly one correct answer";
+  }
+
+  if (question.type === "MULTIPLE_CHOICE" && correctCount < 1) {
+    return "Multiple-choice questions must have at least one correct answer";
+  }
+
+  return null;
+}
+
+function toQuestionInput(question: Question): QuestionInput {
+  return {
+    text: question.text.trim(),
+    imageUrl: question.imageUrl?.trim() || null,
+    type: question.type,
+    timeLimitSec: question.timeLimitSec,
+    points: question.points,
+    orderIndex: question.orderIndex,
+    explanation: question.explanation?.trim() || null,
+    options: question.answerOptions.map((option, index) => ({
+      text: option.text.trim(),
+      imageUrl: option.imageUrl?.trim() || null,
+      isCorrect: option.isCorrect,
+      orderIndex: index + 1,
+    })),
   };
 }
 
 export function QuestionEditorPage() {
   const navigate = useNavigate();
   const { quizId } = useParams();
-  const [questions, setQuestions] = useState<Question[]>(() =>
-    mockQuestions.map(cloneQuestion),
-  );
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
   const question = questions[activeIndex];
 
-  const updateQuestion = (patch: Partial<Question>) => {
+  useEffect(() => {
+    const loadQuiz = async () => {
+      if (!quizId) {
+        setError("Quiz ID is missing");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const loadedQuiz = await getQuiz(quizId);
+        const loadedQuestions = loadedQuiz.questions ?? [];
+        setQuiz(loadedQuiz);
+        setQuestions(
+          loadedQuestions.length > 0
+            ? loadedQuestions
+            : [createDraftQuestion(1, loadedQuiz.defaultTimeLimitSec)],
+        );
+      } catch (loadError) {
+        setError(getErrorMessage(loadError));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadQuiz();
+  }, [quizId]);
+
+  const updateCurrentQuestion = (patch: Partial<Question>) => {
     setSaved(false);
+    setError("");
     setQuestions((current) =>
       current.map((item, index) =>
         index === activeIndex ? { ...item, ...patch } : item,
@@ -42,20 +155,28 @@ export function QuestionEditorPage() {
     );
   };
 
-  const updateAnswer = (answerId: string, patch: Partial<Answer>) => {
-    updateQuestion({
-      answers: question.answers.map((answer) =>
+  const updateAnswer = (answerId: string, patch: Partial<AnswerOption>) => {
+    if (!question) {
+      return;
+    }
+
+    updateCurrentQuestion({
+      answerOptions: question.answerOptions.map((answer) =>
         answer.id === answerId ? { ...answer, ...patch } : answer,
       ),
     });
   };
 
   const selectCorrectAnswer = (answerId: string) => {
-    updateQuestion({
-      answers: question.answers.map((answer) => ({
+    if (!question) {
+      return;
+    }
+
+    updateCurrentQuestion({
+      answerOptions: question.answerOptions.map((answer) => ({
         ...answer,
         isCorrect:
-          question.type === "single"
+          question.type === "SINGLE_CHOICE"
             ? answer.id === answerId
             : answer.id === answerId
               ? !answer.isCorrect
@@ -65,55 +186,111 @@ export function QuestionEditorPage() {
   };
 
   const changeType = (type: QuestionType) => {
+    if (!question) {
+      return;
+    }
+
     const firstCorrectId =
-      question.answers.find((answer) => answer.isCorrect)?.id ??
-      question.answers[0]?.id;
-    updateQuestion({
+      question.answerOptions.find((answer) => answer.isCorrect)?.id ??
+      question.answerOptions[0]?.id;
+
+    updateCurrentQuestion({
       type,
-      answers:
-        type === "single"
-          ? question.answers.map((answer) => ({
+      answerOptions:
+        type === "SINGLE_CHOICE"
+          ? question.answerOptions.map((answer) => ({
               ...answer,
               isCorrect: answer.id === firstCorrectId,
             }))
-          : question.answers,
+          : question.answerOptions,
     });
   };
 
   const addAnswer = () => {
-    const newAnswer: Answer = {
-      id: `answer-${Date.now()}`,
+    if (!question) {
+      return;
+    }
+
+    const nextIndex = question.answerOptions.length + 1;
+    const newAnswer: AnswerOption = {
+      id: `new-answer-${Date.now()}`,
       text: "",
+      imageUrl: null,
       isCorrect: false,
+      orderIndex: nextIndex,
     };
-    updateQuestion({ answers: [...question.answers, newAnswer] });
+    updateCurrentQuestion({
+      answerOptions: [...question.answerOptions, newAnswer],
+    });
   };
 
   const deleteAnswer = (answerId: string) => {
-    if (question.answers.length <= 2) {
+    if (!question || question.answerOptions.length <= 2) {
       return;
     }
-    updateQuestion({
-      answers: question.answers.filter((answer) => answer.id !== answerId),
+
+    updateCurrentQuestion({
+      answerOptions: question.answerOptions.filter(
+        (answer) => answer.id !== answerId,
+      ),
     });
   };
 
   const addQuestion = () => {
-    const newQuestion: Question = {
-      id: `question-${Date.now()}`,
-      text: "New question",
-      type: "single",
-      timeLimit: 30,
-      points: 1000,
-      answers: [
-        { id: `answer-${Date.now()}-1`, text: "Option 1", isCorrect: true },
-        { id: `answer-${Date.now()}-2`, text: "Option 2", isCorrect: false },
-      ],
-    };
+    const newQuestion = createDraftQuestion(
+      questions.length + 1,
+      quiz?.defaultTimeLimitSec,
+    );
     setQuestions((current) => [...current, newQuestion]);
     setActiveIndex(questions.length);
     setSaved(false);
+    setError("");
   };
+
+  const saveQuestion = async () => {
+    if (!quizId || !question) {
+      return;
+    }
+
+    const validationError = validateQuestion(question);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setError("");
+    setIsSaving(true);
+
+    try {
+      const input = toQuestionInput(question);
+      const savedQuestion = question.id.startsWith(NEW_QUESTION_PREFIX)
+        ? await createQuestion(quizId, input)
+        : await updateQuestionRequest(quizId, question.id, input);
+
+      setQuestions((current) =>
+        current.map((item, index) =>
+          index === activeIndex ? savedQuestion : item,
+        ),
+      );
+      setSaved(true);
+    } catch (saveError) {
+      setError(getErrorMessage(saveError));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <p className="text-sm text-zinc-500">Loading quiz...</p>;
+  }
+
+  if (!quiz || !question) {
+    return (
+      <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+        {error || "Quiz could not be loaded"}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -130,23 +307,28 @@ export function QuestionEditorPage() {
           </Button>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-zinc-950">
-              Q3 All-Hands Engineering Trivia
+              {quiz.title}
             </h1>
             <p className="text-sm text-zinc-500">
-              Quiz {quizId} · Editing question {activeIndex + 1} of{" "}
-              {questions.length}
+              Editing question {activeIndex + 1} of {questions.length}
             </p>
           </div>
         </div>
-        <Button onClick={() => setSaved(true)}>
+        <Button disabled={isSaving} onClick={saveQuestion}>
           {saved ? (
             <Check className="mr-2 h-4 w-4" />
           ) : (
             <Save className="mr-2 h-4 w-4" />
           )}
-          {saved ? "Saved" : "Save Question"}
+          {isSaving ? "Saving..." : saved ? "Saved" : "Save Question"}
         </Button>
       </div>
+
+      {error && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
       <div className="grid grid-cols-[220px_minmax(0,1fr)_260px] gap-6">
         <Card className="h-fit">
@@ -173,7 +355,11 @@ export function QuestionEditorPage() {
                       : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50",
                   )}
                   key={item.id}
-                  onClick={() => setActiveIndex(index)}
+                  onClick={() => {
+                    setActiveIndex(index);
+                    setSaved(false);
+                    setError("");
+                  }}
                   type="button"
                 >
                   <span className="block text-xs font-medium text-zinc-400">
@@ -193,7 +379,7 @@ export function QuestionEditorPage() {
               <textarea
                 className="flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
-                  updateQuestion({ text: event.target.value })
+                  updateCurrentQuestion({ text: event.target.value })
                 }
                 rows={3}
                 value={question.text}
@@ -207,7 +393,7 @@ export function QuestionEditorPage() {
                 <Input
                   className="pl-9"
                   onChange={(event) =>
-                    updateQuestion({ imageUrl: event.target.value })
+                    updateCurrentQuestion({ imageUrl: event.target.value })
                   }
                   placeholder="https://example.com/image.jpg"
                   type="url"
@@ -216,30 +402,48 @@ export function QuestionEditorPage() {
               </div>
             </label>
 
+            <label className="block space-y-2 text-sm font-medium text-zinc-900">
+              <span>Explanation (Optional)</span>
+              <textarea
+                className="flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                onChange={(event) =>
+                  updateCurrentQuestion({ explanation: event.target.value })
+                }
+                placeholder="Shown after the question is completed."
+                rows={2}
+                value={question.explanation ?? ""}
+              />
+            </label>
+
             <div className="space-y-4 border-t border-zinc-100 pt-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-zinc-900">
                   Answer Options
                 </p>
                 <span className="text-xs text-zinc-500">
-                  Select correct answer{question.type === "multiple" ? "s" : ""}
+                  Select correct answer
+                  {question.type === "MULTIPLE_CHOICE" ? "s" : ""}
                 </span>
               </div>
 
               <div className="space-y-3">
-                {question.answers.map((answer) => (
+                {question.answerOptions.map((answer) => (
                   <div className="group flex items-center gap-3" key={answer.id}>
                     <GripVertical className="h-4 w-4 text-zinc-300" />
                     <input
                       checked={answer.isCorrect}
                       className="h-4 w-4 accent-violet-600"
                       name={
-                        question.type === "single"
+                        question.type === "SINGLE_CHOICE"
                           ? `correct-${question.id}`
                           : undefined
                       }
                       onChange={() => selectCorrectAnswer(answer.id)}
-                      type={question.type === "single" ? "radio" : "checkbox"}
+                      type={
+                        question.type === "SINGLE_CHOICE"
+                          ? "radio"
+                          : "checkbox"
+                      }
                     />
                     <Input
                       className="flex-1"
@@ -252,7 +456,7 @@ export function QuestionEditorPage() {
                     <Button
                       aria-label="Delete answer"
                       className="px-2 text-zinc-400 opacity-0 group-hover:opacity-100"
-                      disabled={question.answers.length <= 2}
+                      disabled={question.answerOptions.length <= 2}
                       onClick={() => deleteAnswer(answer.id)}
                       size="sm"
                       variant="ghost"
@@ -287,17 +491,19 @@ export function QuestionEditorPage() {
                 }
                 value={question.type}
               >
-                <option value="single">Single Choice</option>
-                <option value="multiple">Multiple Choice</option>
+                <option value="SINGLE_CHOICE">Single Choice</option>
+                <option value="MULTIPLE_CHOICE">Multiple Choice</option>
               </select>
             </label>
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
               <span>Points</span>
               <Input
                 className="h-9"
-                min={0}
+                min={1}
                 onChange={(event) =>
-                  updateQuestion({ points: Number(event.target.value) })
+                  updateCurrentQuestion({
+                    points: Number(event.target.value),
+                  })
                 }
                 type="number"
                 value={question.points}
@@ -308,9 +514,11 @@ export function QuestionEditorPage() {
               <select
                 className="h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
-                  updateQuestion({ timeLimit: Number(event.target.value) })
+                  updateCurrentQuestion({
+                    timeLimitSec: Number(event.target.value),
+                  })
                 }
-                value={question.timeLimit}
+                value={question.timeLimitSec ?? quiz.defaultTimeLimitSec}
               >
                 <option value={20}>20 seconds</option>
                 <option value={30}>30 seconds</option>
