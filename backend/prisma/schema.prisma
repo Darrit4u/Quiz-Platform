@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ORGANIZER
+  PARTICIPANT
+  ADMIN
+}
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuizVisibility {
+  PRIVATE
+  PUBLIC
+  LINK_ONLY
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+}
+
+enum ScoringMode {
+  FIXED
+  TIME_BASED
+}
+
+enum QuizSessionStatus {
+  WAITING_FOR_PLAYERS
+  QUESTION_ACTIVE
+  QUESTION_CLOSED
+  SHOWING_ANSWER
+  FINISHED
+  CANCELLED
+}
+
+enum SessionParticipantStatus {
+  JOINED
+  LEFT
+  KICKED
+  FINISHED
+}
+
+model User {
+  id                    String               @id @default(cuid())
+  email                 String               @unique
+  passwordHash          String
+  name                  String
+  role                  UserRole
+  avatarUrl             String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  createdQuizzes        Quiz[]               @relation("QuizCreator")
+  hostedSessions        QuizSession[]        @relation("SessionHost")
+  sessionParticipations SessionParticipant[]
+  sessionEvents         SessionEvent[]       @relation("SessionEventActor")
+}
+
+model QuizCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  quizzes     Quiz[]
+}
+
+model Quiz {
+  id                  String         @id @default(cuid())
+  creatorId           String
+  categoryId          String?
+  title               String
+  description         String?
+  status              QuizStatus     @default(DRAFT)
+  visibility          QuizVisibility @default(PRIVATE)
+  defaultTimeLimitSec Int            @default(30)
+  scoringMode         ScoringMode    @default(FIXED)
+  shuffleQuestions    Boolean        @default(false)
+  shuffleAnswers      Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  creator             User           @relation("QuizCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  category            QuizCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  questions           Question[]
+  sessions            QuizSession[]
+
+  @@index([creatorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([visibility])
+}
+
+model Question {
+  id                 String              @id @default(cuid())
+  quizId             String
+  text               String
+  imageUrl           String?
+  type               QuestionType
+  timeLimitSec       Int?
+  points             Int                 @default(1)
+  orderIndex         Int
+  explanation        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  quiz               Quiz                @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answerOptions      AnswerOption[]
+  participantAnswers ParticipantAnswer[]
+  currentInSessions  QuizSession[]       @relation("CurrentSessionQuestion")
+
+  @@index([quizId])
+  @@index([quizId, orderIndex])
+}
+
+model AnswerOption {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String
+  imageUrl   String?
+  isCorrect  Boolean  @default(false)
+  orderIndex Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([questionId, orderIndex])
+}
+
+model QuizSession {
+  id                       String               @id @default(cuid())
+  quizId                   String
+  hostId                   String
+  roomCode                 String               @unique
+  status                   QuizSessionStatus    @default(WAITING_FOR_PLAYERS)
+  currentQuestionId        String?
+  currentQuestionStartedAt DateTime?
+  startedAt                DateTime?
+  finishedAt               DateTime?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  quiz                     Quiz                 @relation(fields: [quizId], references: [id], onDelete: Restrict)
+  host                     User                 @relation("SessionHost", fields: [hostId], references: [id], onDelete: Restrict)
+  currentQuestion          Question?            @relation("CurrentSessionQuestion", fields: [currentQuestionId], references: [id], onDelete: SetNull)
+  participants             SessionParticipant[]
+  participantAnswers       ParticipantAnswer[]
+  results                  SessionResult[]
+  events                   SessionEvent[]
+
+  @@index([quizId])
+  @@index([hostId])
+  @@index([status])
+  @@index([currentQuestionId])
+}
+
+model SessionParticipant {
+  id          String                   @id @default(cuid())
+  sessionId   String
+  userId      String
+  displayName String
+  status      SessionParticipantStatus @default(JOINED)
+  score       Int                      @default(0)
+  joinedAt    DateTime                 @default(now())
+  leftAt      DateTime?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  session     QuizSession              @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  user        User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  answers     ParticipantAnswer[]
+  result      SessionResult?
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([status])
+}
+
+model ParticipantAnswer {
+  id                String             @id @default(cuid())
+  sessionId         String
+  participantId     String
+  questionId        String
+  selectedOptionIds Json
+  isCorrect         Boolean
+  scoreAwarded      Int                @default(0)
+  responseTimeMs    Int?
+  answeredAt        DateTime           @default(now())
+  createdAt         DateTime           @default(now())
+  session           QuizSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  participant       SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  question          Question           @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([participantId, questionId])
+  @@index([sessionId])
+  @@index([participantId])
+  @@index([questionId])
+}
+
+model SessionResult {
+  id                    String             @id @default(cuid())
+  sessionId             String
+  participantId         String             @unique
+  finalScore            Int
+  correctAnswersCount   Int
+  totalAnswersCount     Int
+  averageResponseTimeMs Int?
+  place                 Int
+  createdAt             DateTime           @default(now())
+  session               QuizSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  participant           SessionParticipant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, participantId])
+  @@index([sessionId])
+  @@index([place])
+}
+
+model SessionEvent {
+  id          String      @id @default(cuid())
+  sessionId   String
+  actorUserId String?
+  eventType   String
+  payload     Json?
+  createdAt   DateTime    @default(now())
+  session     QuizSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  actor       User?       @relation("SessionEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([actorUserId])
+  @@index([eventType])
+  @@index([createdAt])
+}
