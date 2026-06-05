@@ -1,5 +1,6 @@
 import { LayoutDashboard, LogOut, PlusCircle } from "lucide-react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
+import { useAuth } from "@/auth/useAuth";
 import { cn } from "@/lib/cn";
 
 const navigation = [
@@ -14,6 +15,13 @@ const navigation = [
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <aside className="fixed inset-y-0 left-0 flex w-64 flex-col border-r border-zinc-200 bg-white">
@@ -52,13 +60,14 @@ export function Sidebar() {
           })}
         </nav>
         <div className="border-t border-zinc-200 p-4">
-          <Link
+          <button
             className="flex items-center rounded-md px-2 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
-            to="/login"
+            onClick={handleLogout}
+            type="button"
           >
             <LogOut className="mr-3 h-5 w-5 text-zinc-400" />
             Sign Out
-          </Link>
+          </button>
         </div>
       </div>
     </aside>

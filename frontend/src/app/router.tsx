@@ -1,4 +1,9 @@
 import { createBrowserRouter, Navigate } from "react-router";
+import {
+  HomeRedirect,
+  ProtectedRoute,
+  PublicOnlyRoute,
+} from "@/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { LoginPage } from "@/pages/LoginPage";
@@ -16,50 +21,65 @@ import { ParticipantQuestionPage } from "@/pages/participant/ParticipantQuestion
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <Navigate to="/login" replace />,
+    element: <HomeRedirect />,
   },
   {
-    element: <AuthLayout />,
+    element: <PublicOnlyRoute />,
     children: [
-      { path: "/login", element: <LoginPage /> },
-      { path: "/register", element: <RegisterPage /> },
+      {
+        element: <AuthLayout />,
+        children: [
+          { path: "/login", element: <LoginPage /> },
+          { path: "/register", element: <RegisterPage /> },
+        ],
+      },
     ],
   },
   {
-    path: "/organizer",
-    element: <AppLayout />,
+    element: <ProtectedRoute allowedRoles={["ORGANIZER", "ADMIN"]} />,
     children: [
-      { index: true, element: <OrganizerDashboardPage /> },
-      { path: "quizzes/new", element: <CreateQuizPage /> },
-      { path: "quizzes/:quizId/questions", element: <QuestionEditorPage /> },
+      {
+        path: "/organizer",
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <OrganizerDashboardPage /> },
+          { path: "quizzes/new", element: <CreateQuizPage /> },
+          { path: "quizzes/:quizId/questions", element: <QuestionEditorPage /> },
+        ],
+      },
+      {
+        path: "/organizer/rooms/:roomId/lobby",
+        element: <HostLobbyPage />,
+      },
+      {
+        path: "/organizer/rooms/:roomId/live",
+        element: <HostQuizPage />,
+      },
     ],
   },
   {
-    path: "/organizer/rooms/:roomId/lobby",
-    element: <HostLobbyPage />,
+    element: <ProtectedRoute allowedRoles={["PARTICIPANT"]} />,
+    children: [
+      {
+        path: "/participant/join",
+        element: <ParticipantJoinPage />,
+      },
+      {
+        path: "/participant/rooms/:roomId/lobby",
+        element: <ParticipantLobbyPage />,
+      },
+      {
+        path: "/participant/rooms/:roomId/question",
+        element: <ParticipantQuestionPage />,
+      },
+    ],
   },
   {
-    path: "/organizer/rooms/:roomId/live",
-    element: <HostQuizPage />,
-  },
-  {
-    path: "/participant/join",
-    element: <ParticipantJoinPage />,
-  },
-  {
-    path: "/participant/rooms/:roomId/lobby",
-    element: <ParticipantLobbyPage />,
-  },
-  {
-    path: "/participant/rooms/:roomId/question",
-    element: <ParticipantQuestionPage />,
-  },
-  {
-    path: "/results/:roomId",
-    element: <ResultsPage />,
+    element: <ProtectedRoute />,
+    children: [{ path: "/results/:roomId", element: <ResultsPage /> }],
   },
   {
     path: "*",
-    element: <Navigate to="/login" replace />,
+    element: <Navigate to="/" replace />,
   },
 ]);
