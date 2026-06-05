@@ -84,5 +84,15 @@ export async function httpClient<T>(
 }
 
 export function getErrorMessage(error: unknown) {
+  if (error instanceof ApiError && Array.isArray(error.details)) {
+    const details = error.details.filter(
+      (detail): detail is string => typeof detail === "string",
+    );
+
+    if (details.length > 0) {
+      return `${error.message}: ${details.join(". ")}`;
+    }
+  }
+
   return error instanceof Error ? error.message : "Unexpected error";
 }

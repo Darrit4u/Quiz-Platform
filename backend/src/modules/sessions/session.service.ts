@@ -287,6 +287,10 @@ export async function createSession(hostId: string, quizId: string) {
     throw new HttpError(403, "You can only host your own quizzes");
   }
 
+  if (quiz.status !== "PUBLISHED") {
+    throw new HttpError(400, "Only published quizzes can be hosted");
+  }
+
   if (quiz.questions.length === 0) {
     throw new HttpError(400, "A quiz must have at least one question");
   }
@@ -301,34 +305,59 @@ export async function createSession(hostId: string, quizId: string) {
   }
 
   const roomCode = await generateUniqueRoomCode();
-  const session = await prisma.$transaction(async (transaction) => {
-    const createdSession = await transaction.quizSession.create({
-      data: {
-        quizId,
-        hostId,
-        roomCode,
-        status: "WAITING_FOR_PLAYERS",
-      },
-      select: {
-        id: true,
-        quizId: true,
-        hostId: true,
-        roomCode: true,
-        status: true,
-        createdAt: true,
-      },
-    });
+  const session = await prisma.$transaction(
+    async (transaction) => {
+      const currentQuiz = await transaction.quiz.findUnique({
+        where: { id: quizId },
+        select: {
+          creatorId: true,
+          status: true,
+        },
+      });
 
-    await transaction.sessionEvent.create({
-      data: {
-        sessionId: createdSession.id,
-        actorUserId: hostId,
-        eventType: SESSION_EVENT_TYPES.ROOM_CREATED,
-      },
-    });
+      if (!currentQuiz) {
+        throw new HttpError(404, "Quiz not found");
+      }
 
-    return createdSession;
-  });
+      if (currentQuiz.creatorId !== hostId) {
+        throw new HttpError(403, "You can only host your own quizzes");
+      }
+
+      if (currentQuiz.status !== "PUBLISHED") {
+        throw new HttpError(400, "Only published quizzes can be hosted");
+      }
+
+      const createdSession = await transaction.quizSession.create({
+        data: {
+          quizId,
+          hostId,
+          roomCode,
+          status: "WAITING_FOR_PLAYERS",
+        },
+        select: {
+          id: true,
+          quizId: true,
+          hostId: true,
+          roomCode: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+
+      await transaction.sessionEvent.create({
+        data: {
+          sessionId: createdSession.id,
+          actorUserId: hostId,
+          eventType: SESSION_EVENT_TYPES.ROOM_CREATED,
+        },
+      });
+
+      return createdSession;
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    },
+  );
 
   return {
     ...session,

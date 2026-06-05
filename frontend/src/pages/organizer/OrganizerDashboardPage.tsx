@@ -37,6 +37,13 @@ export function OrganizerDashboardPage() {
     (total, quiz) => total + (quiz.sessionCount ?? 0),
     0,
   );
+  const handleQuizUpdated = (updatedQuiz: Quiz) => {
+    setQuizzes((current) =>
+      current.map((quiz) =>
+        quiz.id === updatedQuiz.id ? updatedQuiz : quiz,
+      ),
+    );
+  };
   const summaryCards = [
     { label: "Total Quizzes", value: quizzes.length.toString(), icon: LayoutList },
     {
@@ -106,7 +113,11 @@ export function OrganizerDashboardPage() {
         ) : (
           <div className="divide-y divide-zinc-100">
             {quizzes.map((quiz) => (
-              <QuizCard key={quiz.id} quiz={quiz} />
+              <QuizCard
+                key={quiz.id}
+                onQuizUpdated={handleQuizUpdated}
+                quiz={quiz}
+              />
             ))}
           </div>
         )}
