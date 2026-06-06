@@ -1,16 +1,24 @@
-import { Ban, ChevronRight, SkipForward } from "lucide-react";
-import { useEffect } from "react";
+import { Ban, ChevronRight, SkipForward, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { getErrorMessage } from "@/api/httpClient";
+import { cancelSession } from "@/api/sessionApi";
 import { Timer } from "@/components/quiz/Timer";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { useSessionSocket } from "@/hooks/useSessionSocket";
 
 export function HostQuizPage() {
   const navigate = useNavigate();
   const { roomId } = useParams();
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const {
+    isConnected,
     sessionState,
     participants,
     currentQuestion: question,
@@ -18,6 +26,7 @@ export function HostQuizPage() {
     answersCount,
     remainingSeconds,
     error,
+    pendingCommand,
     closeQuestion,
     showAnswer,
     nextQuestion,
@@ -28,14 +37,43 @@ export function HostQuizPage() {
     if (sessionState?.status === "FINISHED" && roomId) {
       navigate(`/results/${roomId}`, { state: { from: "organizer" } });
     }
+    if (sessionState?.status === "CANCELLED") {
+      navigate("/organizer", { replace: true });
+    }
   }, [navigate, roomId, sessionState?.status]);
+
+  const handleCancel = async () => {
+    if (!roomId || isCancelling) {
+      return;
+    }
+
+    setIsCancelling(true);
+    setCancelError("");
+
+    try {
+      await cancelSession(roomId);
+      navigate("/organizer", { replace: true });
+    } catch (cancelFailure) {
+      setCancelError(getErrorMessage(cancelFailure));
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   if (!question) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 p-6">
         <div className="text-center">
-          <p className="font-medium text-zinc-900">Loading live question...</p>
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          <p className="font-medium text-zinc-900">
+            {error
+              ? "Не удалось загрузить текущий вопрос."
+              : "Загрузка вопроса..."}
+          </p>
+          {error && (
+            <p className="mt-2 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </p>
+          )}
         </div>
       </main>
     );
@@ -47,7 +85,8 @@ export function HostQuizPage() {
         <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-6 py-4 shadow-sm">
           <div className="flex items-center gap-4">
             <Badge variant="secondary">
-              Question {question.orderIndex + 1}
+              Вопрос {sessionState?.currentQuestionIndex ?? question.orderIndex} из{" "}
+              {sessionState?.totalQuestions ?? "?"}
             </Badge>
             <span className="text-sm font-medium text-zinc-500">
               {sessionState?.quizTitle}
@@ -60,7 +99,7 @@ export function HostQuizPage() {
               <span className="font-bold text-zinc-900">{answersCount}</span>
               <span className="text-zinc-500">
                 {" "}
-                / {participants.length} Answers
+                / {participants.length} ответов
               </span>
             </p>
           </div>
@@ -71,6 +110,13 @@ export function HostQuizPage() {
             <h1 className="max-w-3xl text-4xl font-bold leading-tight tracking-tight text-zinc-900">
               {question.text}
             </h1>
+            {question.imageUrl && (
+              <img
+                alt={question.text}
+                className="max-h-72 max-w-full rounded-xl object-contain"
+                src={question.imageUrl}
+              />
+            )}
             <div className="grid w-full max-w-3xl grid-cols-2 gap-4">
               {question.options.map((answer) => (
                 <div
@@ -88,35 +134,73 @@ export function HostQuizPage() {
           </CardContent>
         </Card>
 
+        {(error || cancelError) && (
+          <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+            {cancelError || error}
+          </p>
+        )}
+
         <div className="flex items-center justify-between">
           <Button
             className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-            disabled={sessionState?.status !== "QUESTION_ACTIVE"}
+            disabled={
+              sessionState?.status !== "QUESTION_ACTIVE" ||
+              pendingCommand !== null ||
+              !isConnected
+            }
             onClick={closeQuestion}
             variant="outline"
           >
             <Ban className="mr-2 h-4 w-4" />
-            Close Submissions
+            {pendingCommand === "close"
+              ? "Закрытие..."
+              : "Закрыть приём ответов"}
           </Button>
           <div className="flex items-center gap-3">
+            <Button
+              className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              disabled={
+                isCancelling ||
+                pendingCommand !== null ||
+                !isConnected
+              }
+              onClick={() => setIsCancelModalOpen(true)}
+              variant="outline"
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Отменить сессию
+            </Button>
             {sessionState?.status === "QUESTION_CLOSED" && (
-              <Button onClick={showAnswer} variant="secondary">
-                Show Answer
+              <Button
+                disabled={pendingCommand !== null || !isConnected}
+                onClick={showAnswer}
+                variant="secondary"
+              >
+                {pendingCommand === "show-answer"
+                  ? "Показ..."
+                  : "Показать ответ"}
               </Button>
             )}
             <Button
               disabled={
                 sessionState?.status !== "SHOWING_ANSWER" &&
-                sessionState?.status !== "QUESTION_CLOSED"
+                sessionState?.status !== "QUESTION_CLOSED" ||
+                pendingCommand !== null ||
+                !isConnected
               }
               onClick={nextQuestion}
               variant="secondary"
             >
               <SkipForward className="mr-2 h-4 w-4" />
-              Next Question
+              {pendingCommand === "next"
+                ? "Загрузка..."
+                : "Следующий вопрос"}
             </Button>
-            <Button onClick={finishSession}>
-              Finish Session
+            <Button
+              disabled={pendingCommand !== null || !isConnected}
+              onClick={() => setIsFinishModalOpen(true)}
+            >
+              Завершить сессию
               <ChevronRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
@@ -126,7 +210,7 @@ export function HostQuizPage() {
           <Card>
             <CardContent className="p-6">
               <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-                Live Leaderboard
+                Текущий рейтинг
               </h2>
               <div className="space-y-2">
                 {leaderboard.slice(0, 5).map((entry, index) => (
@@ -147,6 +231,67 @@ export function HostQuizPage() {
           </Card>
         )}
       </div>
+      <Modal
+        onClose={() => {
+          if (!isCancelling) {
+            setIsCancelModalOpen(false);
+          }
+        }}
+        open={isCancelModalOpen}
+        title="Отменить активную сессию?"
+      >
+        <p className="text-sm text-zinc-600">
+          Квиз будет немедленно остановлен, итоговые результаты не будут
+          сформированы.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button
+            disabled={isCancelling}
+            onClick={() => setIsCancelModalOpen(false)}
+            variant="outline"
+          >
+            Продолжить квиз
+          </Button>
+          <Button
+            className="bg-red-600 hover:bg-red-700"
+            disabled={isCancelling}
+            onClick={handleCancel}
+          >
+            {isCancelling ? "Отмена..." : "Отменить сессию"}
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        onClose={() => {
+          if (pendingCommand !== "finish") {
+            setIsFinishModalOpen(false);
+          }
+        }}
+        open={isFinishModalOpen}
+        title="Завершить сессию?"
+      >
+        <p className="text-sm text-zinc-600">
+          Квиз завершится для всех участников, после чего будет сформирован
+          итоговый рейтинг. Это действие нельзя отменить.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button
+            disabled={pendingCommand === "finish"}
+            onClick={() => setIsFinishModalOpen(false)}
+            variant="outline"
+          >
+            Продолжить квиз
+          </Button>
+          <Button
+            disabled={pendingCommand === "finish"}
+            onClick={finishSession}
+          >
+            {pendingCommand === "finish"
+              ? "Завершение..."
+              : "Завершить сессию"}
+          </Button>
+        </div>
+      </Modal>
     </main>
   );
 }

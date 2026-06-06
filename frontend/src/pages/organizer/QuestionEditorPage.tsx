@@ -36,7 +36,7 @@ function createDraftQuestion(orderIndex: number, timeLimitSec = 30): Question {
 
   return {
     id: `${NEW_QUESTION_PREFIX}${timestamp}`,
-    text: "New question",
+    text: "Новый вопрос",
     imageUrl: null,
     type: "SINGLE_CHOICE",
     timeLimitSec,
@@ -46,14 +46,14 @@ function createDraftQuestion(orderIndex: number, timeLimitSec = 30): Question {
     answerOptions: [
       {
         id: `new-answer-${timestamp}-1`,
-        text: "Option 1",
+        text: "Вариант 1",
         imageUrl: null,
         isCorrect: true,
         orderIndex: 1,
       },
       {
         id: `new-answer-${timestamp}-2`,
-        text: "Option 2",
+        text: "Вариант 2",
         imageUrl: null,
         isCorrect: false,
         orderIndex: 2,
@@ -64,15 +64,15 @@ function createDraftQuestion(orderIndex: number, timeLimitSec = 30): Question {
 
 function validateQuestion(question: Question) {
   if (!question.text.trim()) {
-    return "Question text is required";
+    return "Введите текст вопроса";
   }
 
   if (question.answerOptions.length < 2) {
-    return "A question must have at least two answer options";
+    return "У вопроса должно быть не менее двух вариантов ответа";
   }
 
   if (question.answerOptions.some((option) => !option.text.trim())) {
-    return "Every answer option must contain text";
+    return "Заполните текст каждого варианта ответа";
   }
 
   const correctCount = question.answerOptions.filter(
@@ -80,11 +80,11 @@ function validateQuestion(question: Question) {
   ).length;
 
   if (question.type === "SINGLE_CHOICE" && correctCount !== 1) {
-    return "Single-choice questions must have exactly one correct answer";
+    return "Для вопроса с одним ответом выберите один правильный вариант";
   }
 
   if (question.type === "MULTIPLE_CHOICE" && correctCount < 1) {
-    return "Multiple-choice questions must have at least one correct answer";
+    return "Для вопроса с несколькими ответами выберите хотя бы один правильный вариант";
   }
 
   return null;
@@ -124,7 +124,7 @@ export function QuestionEditorPage() {
   useEffect(() => {
     const loadQuiz = async () => {
       if (!quizId) {
-        setError("Quiz ID is missing");
+        setError("Не указан идентификатор квиза");
         setIsLoading(false);
         return;
       }
@@ -252,7 +252,7 @@ export function QuestionEditorPage() {
 
   const persistQuestion = async (draftQuestion: Question) => {
     if (!quizId) {
-      throw new Error("Quiz ID is missing");
+      throw new Error("Не указан идентификатор квиза");
     }
 
     const input = toQuestionInput(draftQuestion);
@@ -300,7 +300,7 @@ export function QuestionEditorPage() {
       const validationError = validateQuestion(draftQuestion);
       if (validationError) {
         setActiveIndex(index);
-        setError(`Question ${index + 1}: ${validationError}`);
+        setError(`Вопрос ${index + 1}: ${validationError}`);
         return;
       }
     }
@@ -337,13 +337,44 @@ export function QuestionEditorPage() {
   };
 
   if (isLoading) {
-    return <p className="text-sm text-zinc-500">Loading quiz...</p>;
+    return <p className="text-sm text-zinc-500">Загрузка квиза...</p>;
   }
 
   if (!quiz || !question) {
     return (
       <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
-        {error || "Quiz could not be loaded"}
+        {error || "Не удалось загрузить квиз"}
+      </div>
+    );
+  }
+
+  if (quiz.hasActiveSession) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div className="flex items-center gap-4">
+          <Button
+            aria-label="Назад"
+            className="px-2"
+            onClick={() => navigate(-1)}
+            size="sm"
+            variant="ghost"
+          >
+            <ArrowLeft className="h-5 w-5 text-zinc-500" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-950">
+              {quiz.title}
+            </h1>
+            <p className="mt-1 text-sm text-amber-700">
+              Редактирование недоступно, пока активна сессия.
+            </p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="p-6 text-sm text-zinc-600">
+            Завершите или отмените активную сессию перед изменением квиза.
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -353,7 +384,7 @@ export function QuestionEditorPage() {
       <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
         <div className="flex items-center gap-4">
           <Button
-            aria-label="Go back"
+            aria-label="Назад"
             className="px-2"
             onClick={() => navigate(-1)}
             size="sm"
@@ -366,7 +397,7 @@ export function QuestionEditorPage() {
               {quiz.title}
             </h1>
             <p className="text-sm text-zinc-500">
-              Editing question {activeIndex + 1} of {questions.length}
+              Редактирование вопроса {activeIndex + 1} из {questions.length}
             </p>
           </div>
         </div>
@@ -378,7 +409,7 @@ export function QuestionEditorPage() {
               variant="secondary"
             >
               <Upload className="mr-2 h-4 w-4" />
-              {isPublishing ? "Publishing..." : "Publish Quiz"}
+              {isPublishing ? "Публикация..." : "Опубликовать квиз"}
             </Button>
           )}
           <Button
@@ -390,7 +421,11 @@ export function QuestionEditorPage() {
             ) : (
               <Save className="mr-2 h-4 w-4" />
             )}
-            {isSaving ? "Saving..." : saved ? "Saved" : "Save Question"}
+            {isSaving
+              ? "Сохранение..."
+              : saved
+                ? "Сохранено"
+                : "Сохранить вопрос"}
           </Button>
         </div>
       </div>
@@ -405,9 +440,9 @@ export function QuestionEditorPage() {
         <Card className="h-fit">
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-zinc-900">Questions</p>
+              <p className="text-sm font-semibold text-zinc-900">Вопросы</p>
               <Button
-                aria-label="Add question"
+                aria-label="Добавить вопрос"
                 className="px-2"
                 onClick={addQuestion}
                 size="sm"
@@ -434,7 +469,7 @@ export function QuestionEditorPage() {
                   type="button"
                 >
                   <span className="block text-xs font-medium text-zinc-400">
-                    Question {index + 1}
+                    Вопрос {index + 1}
                   </span>
                   <span className="mt-1 block truncate">{item.text}</span>
                 </button>
@@ -446,7 +481,7 @@ export function QuestionEditorPage() {
         <Card>
           <CardContent className="space-y-6 p-6">
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Question Text</span>
+              <span>Текст вопроса</span>
               <textarea
                 className="flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
@@ -458,7 +493,7 @@ export function QuestionEditorPage() {
             </label>
 
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Image URL (Optional)</span>
+              <span>Ссылка на изображение (необязательно)</span>
               <div className="relative">
                 <ImageIcon className="absolute left-3 top-3 h-4 w-4 text-zinc-400" />
                 <Input
@@ -474,13 +509,13 @@ export function QuestionEditorPage() {
             </label>
 
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Explanation (Optional)</span>
+              <span>Пояснение (необязательно)</span>
               <textarea
                 className="flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
                   updateCurrentQuestion({ explanation: event.target.value })
                 }
-                placeholder="Shown after the question is completed."
+                placeholder="Будет показано после завершения вопроса."
                 rows={2}
                 value={question.explanation ?? ""}
               />
@@ -489,11 +524,12 @@ export function QuestionEditorPage() {
             <div className="space-y-4 border-t border-zinc-100 pt-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-zinc-900">
-                  Answer Options
+                  Варианты ответа
                 </p>
                 <span className="text-xs text-zinc-500">
-                  Select correct answer
-                  {question.type === "MULTIPLE_CHOICE" ? "s" : ""}
+                  {question.type === "MULTIPLE_CHOICE"
+                    ? "Выберите правильные варианты"
+                    : "Выберите правильный вариант"}
                 </span>
               </div>
 
@@ -521,11 +557,11 @@ export function QuestionEditorPage() {
                       onChange={(event) =>
                         updateAnswer(answer.id, { text: event.target.value })
                       }
-                      placeholder="Answer option"
+                      placeholder="Вариант ответа"
                       value={answer.text}
                     />
                     <Button
-                      aria-label="Delete answer"
+                      aria-label="Удалить вариант ответа"
                       className="px-2 text-zinc-400 opacity-0 group-hover:opacity-100"
                       disabled={question.answerOptions.length <= 2}
                       onClick={() => deleteAnswer(answer.id)}
@@ -545,7 +581,7 @@ export function QuestionEditorPage() {
                 variant="outline"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Add Option
+                Добавить вариант
               </Button>
             </div>
           </CardContent>
@@ -554,7 +590,7 @@ export function QuestionEditorPage() {
         <Card className="h-fit">
           <CardContent className="space-y-4 p-5">
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Question Type</span>
+              <span>Тип вопроса</span>
               <select
                 className="h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
@@ -562,12 +598,12 @@ export function QuestionEditorPage() {
                 }
                 value={question.type}
               >
-                <option value="SINGLE_CHOICE">Single Choice</option>
-                <option value="MULTIPLE_CHOICE">Multiple Choice</option>
+                <option value="SINGLE_CHOICE">Один правильный ответ</option>
+                <option value="MULTIPLE_CHOICE">Несколько правильных ответов</option>
               </select>
             </label>
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Points</span>
+              <span>Баллы</span>
               <Input
                 className="h-9"
                 min={1}
@@ -581,7 +617,7 @@ export function QuestionEditorPage() {
               />
             </label>
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Time Limit (seconds)</span>
+              <span>Ограничение времени (секунды)</span>
               <select
                 className="h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
@@ -591,11 +627,11 @@ export function QuestionEditorPage() {
                 }
                 value={question.timeLimitSec ?? quiz.defaultTimeLimitSec}
               >
-                <option value={20}>20 seconds</option>
-                <option value={30}>30 seconds</option>
-                <option value={45}>45 seconds</option>
-                <option value={60}>60 seconds</option>
-                <option value={90}>90 seconds</option>
+                <option value={20}>20 секунд</option>
+                <option value={30}>30 секунд</option>
+                <option value={45}>45 секунд</option>
+                <option value={60}>60 секунд</option>
+                <option value={90}>90 секунд</option>
               </select>
             </label>
           </CardContent>

@@ -119,7 +119,7 @@ model Question {
   currentInSessions  QuizSession[]       @relation("CurrentSessionQuestion")
 
   @@index([quizId])
-  @@index([quizId, orderIndex])
+  @@unique([quizId, orderIndex])
 }
 
 model AnswerOption {
@@ -134,7 +134,7 @@ model AnswerOption {
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@index([questionId])
-  @@index([questionId, orderIndex])
+  @@unique([questionId, orderIndex])
 }
 
 model QuizSession {

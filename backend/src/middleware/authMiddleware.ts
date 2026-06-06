@@ -10,14 +10,14 @@ export function authMiddleware(
   const authorization = request.header("authorization");
 
   if (!authorization?.startsWith("Bearer ")) {
-    next(new HttpError(401, "Authorization bearer token is required"));
+    next(new HttpError(401, "Требуется токен авторизации"));
     return;
   }
 
   const token = authorization.slice("Bearer ".length).trim();
 
   if (!token) {
-    next(new HttpError(401, "Authorization bearer token is required"));
+    next(new HttpError(401, "Требуется токен авторизации"));
     return;
   }
 

@@ -38,7 +38,7 @@ export const updateQuizSchema = z
     shuffleAnswers: z.boolean().optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
-    message: "At least one quiz field must be provided",
+    message: "Укажите хотя бы одно поле квиза",
   });
 
 export const answerOptionSchema = z.object({
@@ -61,7 +61,7 @@ export const questionIntegritySchema = z
       context.addIssue({
         code: "custom",
         path: ["options"],
-        message: "Answer option order indexes must be unique",
+        message: "Порядковые номера вариантов ответа должны быть уникальными",
       });
     }
 
@@ -69,7 +69,7 @@ export const questionIntegritySchema = z
       context.addIssue({
         code: "custom",
         path: ["options"],
-        message: "SINGLE_CHOICE questions must have exactly one correct option",
+        message: "У вопроса с одним ответом должен быть один правильный вариант",
       });
     }
 
@@ -77,7 +77,7 @@ export const questionIntegritySchema = z
       context.addIssue({
         code: "custom",
         path: ["options"],
-        message: "MULTIPLE_CHOICE questions must have at least one correct option",
+        message: "У вопроса с несколькими ответами должен быть хотя бы один правильный вариант",
       });
     }
   });
@@ -122,7 +122,7 @@ export const updateQuestionSchema = z
     options: z.array(answerOptionSchema).min(2).optional(),
   })
   .refine((input) => Object.keys(input).length > 0, {
-    message: "At least one question field must be provided",
+    message: "Укажите хотя бы одно поле вопроса",
   });
 
 export type CreateQuizInput = z.infer<typeof createQuizSchema>;

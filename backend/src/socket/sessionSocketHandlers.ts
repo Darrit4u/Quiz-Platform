@@ -10,6 +10,8 @@ import {
   showAnswer,
   startSession,
   submitAnswer,
+  onAutomaticQuestionClosed,
+  restoreActiveQuestionTimers,
 } from "../modules/sessions/session.service.js";
 import { HttpError } from "../utils/httpError.js";
 import type {
@@ -47,7 +49,7 @@ function sessionRoom(sessionId: string) {
 
 function requireRole(socket: SessionSocket, role: "ORGANIZER" | "PARTICIPANT") {
   if (socket.data.user.role !== role) {
-    throw new HttpError(403, `${role} role is required`);
+    throw new HttpError(403, `Требуется роль ${role}`);
   }
 }
 
@@ -84,6 +86,10 @@ function sessionState(
     roomCode: session.roomCode,
     quizTitle: session.quiz.title,
     currentQuestionId: session.currentQuestionId,
+    currentQuestionIndex: session.currentQuestionIndex,
+    totalQuestions: session.totalQuestions,
+    hasAnsweredCurrentQuestion: session.hasAnsweredCurrentQuestion,
+    canAnswerCurrentQuestion: session.canAnswerCurrentQuestion,
     currentQuestionStartedAt:
       session.currentQuestionStartedAt?.toISOString() ?? null,
     startedAt: session.startedAt?.toISOString() ?? null,
@@ -95,12 +101,15 @@ function sessionState(
 function participantsPayload(
   session: Awaited<ReturnType<typeof getSession>>,
 ) {
+  const revealScores =
+    session.status === "SHOWING_ANSWER" || session.status === "FINISHED";
+
   return {
     sessionId: session.id,
     participants: session.participants.map((participant) => ({
       participantId: participant.id,
       displayName: participant.displayName,
-      score: participant.score,
+      score: revealScores ? participant.score : 0,
       status: participant.status,
     })),
   };
@@ -164,8 +173,6 @@ function emitQuestionStarted(
   sessionId: string,
   session: Awaited<ReturnType<typeof getSession>>,
 ) {
-  // TODO: add a persisted/scheduled automatic close. Answer deadlines are
-  // still enforced by submitAnswer using authoritative server timestamps.
   const question = publicQuestion(session.currentQuestion);
   if (!question) {
     return;
@@ -182,6 +189,35 @@ function emitQuestionStarted(
       session.currentQuestionStartedAt?.toISOString() ?? null,
     serverTime: new Date().toISOString(),
   });
+
+}
+
+async function emitQuestionClosed(
+  io: SessionServer,
+  sessionId: string,
+  actor: SocketData["user"],
+) {
+  const session = await getSession(actor, sessionId);
+  const answersCount = await getCurrentQuestionAnswersCount(sessionId);
+
+  io.to(sessionRoom(sessionId)).emit("quiz:question-closed", {
+    sessionId,
+    questionId: session.currentQuestionId,
+    status: session.status,
+    answersCount,
+  });
+  await emitSessionState(io, sessionId, actor);
+}
+
+export async function initializeSessionTimers(io: SessionServer) {
+  onAutomaticQuestionClosed((sessionId, hostId) =>
+    emitQuestionClosed(io, sessionId, {
+      id: hostId,
+      email: "",
+      role: "ORGANIZER",
+    }),
+  );
+  await restoreActiveQuestionTimers();
 }
 
 function emitSocketError(socket: SessionSocket, error: unknown) {
@@ -200,7 +236,7 @@ function handle(
     if (rejection) {
       socket.emit("participant:answer-rejected", {
         ...rejection,
-        reason: error instanceof Error ? error.message : "Answer rejected",
+        reason: error instanceof Error ? error.message : "Ответ отклонён",
       });
       return;
     }
@@ -289,17 +325,8 @@ export function registerSessionSocketHandlers(
     handle(socket, async () => {
       requireRole(socket, "ORGANIZER");
       const { sessionId } = sessionPayloadSchema.parse(rawPayload);
-      const session = await closeQuestion(socket.data.user.id, sessionId);
-      const answersCount = await getCurrentQuestionAnswersCount(sessionId);
-
-      io.to(sessionRoom(sessionId)).emit("quiz:question-closed", {
-        sessionId,
-        questionId: session.currentQuestionId,
-        status: session.status,
-        answersCount,
-      });
-      await emitSessionState(io, sessionId, socket.data.user);
-      await emitLeaderboard(io, sessionId, socket.data.user);
+      await closeQuestion(socket.data.user.id, sessionId);
+      await emitQuestionClosed(io, sessionId, socket.data.user);
     });
   });
 
@@ -409,9 +436,6 @@ export function registerSessionSocketHandlers(
         socket.emit("participant:answer-accepted", {
           sessionId: payload.sessionId,
           questionId: result.answer.questionId,
-          isCorrect: result.answer.isCorrect,
-          scoreAwarded: result.answer.scoreAwarded,
-          currentScore: result.participantScore,
         });
         const answersCount = await getCurrentQuestionAnswersCount(
           payload.sessionId,
@@ -420,8 +444,6 @@ export function registerSessionSocketHandlers(
           sessionId: payload.sessionId,
           answersCount,
         });
-        await emitParticipants(io, payload.sessionId, socket.data.user);
-        await emitLeaderboard(io, payload.sessionId, socket.data.user);
       },
       {
         sessionId: untrusted.sessionId ?? "",

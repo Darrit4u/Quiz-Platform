@@ -16,7 +16,7 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500">
-        Loading account...
+        Загрузка аккаунта...
       </main>
     );
   }
@@ -38,7 +38,7 @@ export function PublicOnlyRoute() {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500">
-        Loading account...
+        Загрузка аккаунта...
       </main>
     );
   }

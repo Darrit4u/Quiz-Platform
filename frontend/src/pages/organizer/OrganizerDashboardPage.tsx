@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { getErrorMessage } from "@/api/httpClient";
 import { getQuizzes } from "@/api/quizApi";
+import { getHostedSessions } from "@/api/sessionApi";
 import { QuizCard } from "@/components/quiz/QuizCard";
 import { Button } from "@/components/ui/Button";
 import {
@@ -13,16 +14,23 @@ import {
   CardTitle,
 } from "@/components/ui/Card";
 import type { Quiz } from "@/types/quiz";
+import type { HostedSession } from "@/types/session";
 
 export function OrganizerDashboardPage() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [sessions, setSessions] = useState<HostedSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const loadQuizzes = async () => {
+    const loadDashboard = async () => {
       try {
-        setQuizzes(await getQuizzes());
+        const [loadedQuizzes, loadedSessions] = await Promise.all([
+          getQuizzes(),
+          getHostedSessions(),
+        ]);
+        setQuizzes(loadedQuizzes);
+        setSessions(loadedSessions);
       } catch (loadError) {
         setError(getErrorMessage(loadError));
       } finally {
@@ -30,11 +38,14 @@ export function OrganizerDashboardPage() {
       }
     };
 
-    void loadQuizzes();
+    void loadDashboard();
   }, []);
 
-  const sessionCount = quizzes.reduce(
-    (total, quiz) => total + (quiz.sessionCount ?? 0),
+  const completedSessionCount = sessions.filter(
+    (session) => session.status === "FINISHED",
+  ).length;
+  const participantCount = sessions.reduce(
+    (total, session) => total + session.participantCount,
     0,
   );
   const handleQuizUpdated = (updatedQuiz: Quiz) => {
@@ -45,13 +56,21 @@ export function OrganizerDashboardPage() {
     );
   };
   const summaryCards = [
-    { label: "Total Quizzes", value: quizzes.length.toString(), icon: LayoutList },
     {
-      label: "Completed Sessions",
-      value: sessionCount.toString(),
+      label: "Всего квизов",
+      value: quizzes.length.toString(),
+      icon: LayoutList,
+    },
+    {
+      label: "Завершённых сессий",
+      value: completedSessionCount.toString(),
       icon: Activity,
     },
-    { label: "Total Participants", value: "—", icon: Users },
+    {
+      label: "Всего участников",
+      value: participantCount.toString(),
+      icon: Users,
+    },
   ];
 
   return (
@@ -59,16 +78,16 @@ export function OrganizerDashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-950">
-            Dashboard
+            Главная
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Manage your quizzes and view recent activity.
+            Управляйте квизами и просматривайте недавнюю активность.
           </p>
         </div>
         <Link to="/organizer/quizzes/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            Create Quiz
+            Создать квиз
           </Button>
         </Link>
       </div>
@@ -91,23 +110,23 @@ export function OrganizerDashboardPage() {
 
       <Card>
         <CardHeader className="border-b border-zinc-100 pb-4">
-          <CardTitle className="text-lg">Recent Quizzes</CardTitle>
+          <CardTitle className="text-lg">Все квизы</CardTitle>
           <CardDescription>
-            Your most recently edited or created quiz templates.
+            Шаблоны квизов, отсортированные по дате изменения.
           </CardDescription>
         </CardHeader>
 
         {isLoading ? (
-          <p className="p-6 text-sm text-zinc-500">Loading quizzes...</p>
+          <p className="p-6 text-sm text-zinc-500">Загрузка данных...</p>
         ) : error ? (
           <p className="m-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </p>
         ) : quizzes.length === 0 ? (
           <div className="p-10 text-center">
-            <p className="font-medium text-zinc-900">No quizzes yet</p>
+            <p className="font-medium text-zinc-900">Квизов пока нет</p>
             <p className="mt-1 text-sm text-zinc-500">
-              Create your first quiz to start adding questions.
+              Создайте первый квиз, чтобы добавить вопросы.
             </p>
           </div>
         ) : (

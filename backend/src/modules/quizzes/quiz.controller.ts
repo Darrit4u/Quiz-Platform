@@ -12,7 +12,7 @@ import * as quizService from "./quiz.service.js";
 
 function getAuthUser(request: Request) {
   if (!request.user) {
-    throw new HttpError(401, "Authentication is required");
+    throw new HttpError(401, "Требуется авторизация");
   }
   return request.user;
 }

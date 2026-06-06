@@ -22,8 +22,8 @@ export function QuestionCard({
         </h2>
         {imageUrl && (
           <img
-            alt=""
-            className="max-h-64 w-full rounded-lg object-cover"
+            alt={question}
+            className="max-h-64 max-w-full self-center rounded-lg object-contain"
             src={imageUrl}
           />
         )}

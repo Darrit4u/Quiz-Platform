@@ -25,6 +25,12 @@ const sessionDetailsInclude = {
       title: true,
       scoringMode: true,
       defaultTimeLimitSec: true,
+      shuffleQuestions: true,
+      shuffleAnswers: true,
+      questions: {
+        orderBy: { orderIndex: Prisma.SortOrder.asc },
+        select: { id: true, orderIndex: true },
+      },
     },
   },
   host: {
@@ -55,26 +61,115 @@ type SessionDetails = Prisma.QuizSessionGetPayload<{
 }>;
 
 const finalStatuses: QuizSessionStatus[] = ["FINISHED", "CANCELLED"];
+const questionTimers = new Map<string, NodeJS.Timeout>();
+const automaticCloseListeners = new Set<
+  (sessionId: string, hostId: string) => void | Promise<void>
+>();
+
+function clearQuestionTimer(sessionId: string) {
+  const timer = questionTimers.get(sessionId);
+  if (timer) {
+    clearTimeout(timer);
+    questionTimers.delete(sessionId);
+  }
+}
+
+function scheduleQuestionTimer(timer: {
+  sessionId: string;
+  hostId: string;
+  currentQuestionStartedAt: Date;
+  timeLimitSec: number;
+}) {
+  clearQuestionTimer(timer.sessionId);
+  const deadline =
+    timer.currentQuestionStartedAt.getTime() + timer.timeLimitSec * 1000;
+
+  questionTimers.set(
+    timer.sessionId,
+    setTimeout(() => {
+      questionTimers.delete(timer.sessionId);
+      void closeQuestion(timer.hostId, timer.sessionId)
+        .then(async () => {
+          await Promise.allSettled(
+            [...automaticCloseListeners].map((listener) =>
+              listener(timer.sessionId, timer.hostId),
+            ),
+          );
+        })
+        .catch((error: unknown) => {
+          if (
+            !(error instanceof HttpError) ||
+            ![400, 404, 409].includes(error.statusCode)
+          ) {
+            console.error("Automatic question close failed:", error);
+          }
+        });
+    }, Math.max(0, deadline - Date.now())),
+  );
+}
+
+export function onAutomaticQuestionClosed(
+  listener: (sessionId: string, hostId: string) => void | Promise<void>,
+) {
+  automaticCloseListeners.add(listener);
+  return () => automaticCloseListeners.delete(listener);
+}
+
+function seededHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function deterministicShuffle<T extends { id: string }>(
+  items: T[],
+  seed: string,
+) {
+  return [...items].sort(
+    (left, right) =>
+      seededHash(`${seed}:${left.id}`) - seededHash(`${seed}:${right.id}`),
+  );
+}
+
+function getSessionQuestionOrder<
+  T extends { id: string; orderIndex: number },
+>(sessionId: string, shuffleQuestions: boolean, questions: T[]) {
+  return shuffleQuestions
+    ? deterministicShuffle(questions, `${sessionId}:questions`)
+    : [...questions].sort((left, right) => left.orderIndex - right.orderIndex);
+}
 
 function assertNotFinal(status: QuizSessionStatus) {
   if (finalStatuses.includes(status)) {
-    throw new HttpError(400, `Session is already ${status.toLowerCase()}`);
+    throw new HttpError(400, "Сессия уже завершена или отменена");
   }
 }
 
 function assertHost(session: { hostId: string }, userId: string) {
   if (session.hostId !== userId) {
-    throw new HttpError(403, "You can only control sessions you host");
+    throw new HttpError(403, "Можно управлять только собственными сессиями");
   }
 }
 
 function serializeQuestion(
   question: SessionDetails["currentQuestion"],
   revealCorrectAnswers: boolean,
+  sessionId: string,
+  shuffleAnswers: boolean,
 ) {
   if (!question) {
     return null;
   }
+
+  const answerOptions = shuffleAnswers
+    ? deterministicShuffle(
+        question.answerOptions,
+        `${sessionId}:${question.id}:answers`,
+      )
+    : question.answerOptions;
 
   return {
     id: question.id,
@@ -85,7 +180,7 @@ function serializeQuestion(
     points: question.points,
     orderIndex: question.orderIndex,
     explanation: revealCorrectAnswers ? question.explanation : undefined,
-    answerOptions: question.answerOptions.map((option) => ({
+    answerOptions: answerOptions.map((option) => ({
       id: option.id,
       text: option.text,
       imageUrl: option.imageUrl,
@@ -98,7 +193,20 @@ function serializeQuestion(
 function serializeSession(
   session: SessionDetails,
   revealCorrectAnswers: boolean,
+  hasAnsweredCurrentQuestion = false,
+  canAnswerCurrentQuestion = true,
 ) {
+  const orderedQuestions = getSessionQuestionOrder(
+    session.id,
+    session.quiz.shuffleQuestions,
+    session.quiz.questions,
+  );
+  const currentQuestionIndex = session.currentQuestionId
+    ? orderedQuestions.findIndex(
+        (question) => question.id === session.currentQuestionId,
+      ) + 1
+    : null;
+
   return {
     id: session.id,
     quizId: session.quizId,
@@ -116,12 +224,26 @@ function serializeSession(
       title: session.quiz.title,
       defaultTimeLimitSec: session.quiz.defaultTimeLimitSec,
       scoringMode: session.quiz.scoringMode,
+      shuffleQuestions: session.quiz.shuffleQuestions,
+      shuffleAnswers: session.quiz.shuffleAnswers,
     },
+    currentQuestionIndex:
+      currentQuestionIndex && currentQuestionIndex > 0
+        ? currentQuestionIndex
+        : null,
+    totalQuestions: session.quiz.questions.length,
+    hasAnsweredCurrentQuestion,
+    canAnswerCurrentQuestion,
     host: session.host,
-    participants: session.participants,
+    participants: session.participants.map((participant) => ({
+      ...participant,
+      score: revealCorrectAnswers ? participant.score : 0,
+    })),
     currentQuestion: serializeQuestion(
       session.currentQuestion,
       revealCorrectAnswers,
+      session.id,
+      session.quiz.shuffleAnswers,
     ),
   };
 }
@@ -133,7 +255,7 @@ async function getSessionDetails(sessionId: string) {
   });
 
   if (!session) {
-    throw new HttpError(404, "Session not found");
+    throw new HttpError(404, "Сессия не найдена");
   }
 
   return session;
@@ -171,7 +293,7 @@ async function finishSessionTransaction(
   });
 
   if (!session) {
-    throw new HttpError(404, "Session not found");
+    throw new HttpError(404, "Сессия не найдена");
   }
 
   assertHost(session, actorUserId);
@@ -280,84 +402,128 @@ export async function createSession(hostId: string, quizId: string) {
   });
 
   if (!quiz) {
-    throw new HttpError(404, "Quiz not found");
+    throw new HttpError(404, "Квиз не найден");
   }
 
   if (quiz.creatorId !== hostId) {
-    throw new HttpError(403, "You can only host your own quizzes");
+    throw new HttpError(403, "Можно проводить только собственные квизы");
   }
 
   if (quiz.status !== "PUBLISHED") {
-    throw new HttpError(400, "Only published quizzes can be hosted");
+    throw new HttpError(400, "Проводить можно только опубликованные квизы");
   }
 
   if (quiz.questions.length === 0) {
-    throw new HttpError(400, "A quiz must have at least one question");
+    throw new HttpError(400, "Квиз должен содержать хотя бы один вопрос");
   }
 
   for (const question of quiz.questions) {
     if (question.answerOptions.length < 2) {
       throw new HttpError(
         400,
-        `Question ${question.id} must have at least two answer options`,
+        `Вопрос ${question.id} должен содержать не менее двух вариантов ответа`,
       );
     }
   }
 
   const roomCode = await generateUniqueRoomCode();
-  const session = await prisma.$transaction(
-    async (transaction) => {
-      const currentQuiz = await transaction.quiz.findUnique({
-        where: { id: quizId },
-        select: {
-          creatorId: true,
-          status: true,
-        },
-      });
+  const sessionSelect = {
+    id: true,
+    quizId: true,
+    hostId: true,
+    roomCode: true,
+    status: true,
+    createdAt: true,
+  } as const;
 
-      if (!currentQuiz) {
-        throw new HttpError(404, "Quiz not found");
-      }
+  const createOrReuseSession = () =>
+    prisma.$transaction(
+      async (transaction) => {
+        const currentQuiz = await transaction.quiz.findUnique({
+          where: { id: quizId },
+          select: {
+            creatorId: true,
+            status: true,
+          },
+        });
 
-      if (currentQuiz.creatorId !== hostId) {
-        throw new HttpError(403, "You can only host your own quizzes");
-      }
+        if (!currentQuiz) {
+          throw new HttpError(404, "Квиз не найден");
+        }
 
-      if (currentQuiz.status !== "PUBLISHED") {
-        throw new HttpError(400, "Only published quizzes can be hosted");
-      }
+        if (currentQuiz.creatorId !== hostId) {
+          throw new HttpError(403, "Можно проводить только собственные квизы");
+        }
 
-      const createdSession = await transaction.quizSession.create({
-        data: {
+        if (currentQuiz.status !== "PUBLISHED") {
+          throw new HttpError(400, "Проводить можно только опубликованные квизы");
+        }
+
+        const activeSession = await transaction.quizSession.findFirst({
+          where: {
+            quizId,
+            status: { notIn: finalStatuses },
+          },
+          orderBy: { createdAt: "desc" },
+          select: sessionSelect,
+        });
+
+        if (activeSession) {
+          return activeSession;
+        }
+
+        const createdSession = await transaction.quizSession.create({
+          data: {
+            quizId,
+            hostId,
+            roomCode,
+            status: "WAITING_FOR_PLAYERS",
+          },
+          select: sessionSelect,
+        });
+
+        await transaction.sessionEvent.create({
+          data: {
+            sessionId: createdSession.id,
+            actorUserId: hostId,
+            eventType: SESSION_EVENT_TYPES.ROOM_CREATED,
+          },
+        });
+
+        return createdSession;
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
+
+  let session;
+  try {
+    session = await createOrReuseSession();
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    ) {
+      const activeSession = await prisma.quizSession.findFirst({
+        where: {
           quizId,
           hostId,
-          roomCode,
-          status: "WAITING_FOR_PLAYERS",
+          status: { notIn: finalStatuses },
         },
-        select: {
-          id: true,
-          quizId: true,
-          hostId: true,
-          roomCode: true,
-          status: true,
-          createdAt: true,
-        },
+        orderBy: { createdAt: "desc" },
+        select: sessionSelect,
       });
 
-      await transaction.sessionEvent.create({
-        data: {
-          sessionId: createdSession.id,
-          actorUserId: hostId,
-          eventType: SESSION_EVENT_TYPES.ROOM_CREATED,
-        },
-      });
-
-      return createdSession;
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    },
-  );
+      if (activeSession) {
+        session = activeSession;
+      } else {
+        session = await createOrReuseSession();
+      }
+    } else {
+      throw error;
+    }
+  }
 
   return {
     ...session,
@@ -368,12 +534,12 @@ export async function createSession(hostId: string, quizId: string) {
 export async function getSession(user: AuthUser, sessionId: string) {
   const session = await getSessionDetails(sessionId);
   const isHost = session.hostId === user.id;
-  const isParticipant = session.participants.some(
+  const participant = session.participants.find(
     (participant) => participant.userId === user.id,
   );
 
-  if (!isHost && !isParticipant && user.role !== "ADMIN") {
-    throw new HttpError(403, "You do not have access to this session");
+  if (!isHost && !participant && user.role !== "ADMIN") {
+    throw new HttpError(403, "Нет доступа к этой сессии");
   }
 
   const revealCorrectAnswers =
@@ -382,7 +548,30 @@ export async function getSession(user: AuthUser, sessionId: string) {
     session.status === "SHOWING_ANSWER" ||
     session.status === "FINISHED";
 
-  return serializeSession(session, revealCorrectAnswers);
+  const hasAnsweredCurrentQuestion =
+    Boolean(participant && session.currentQuestionId) &&
+    Boolean(
+      await prisma.participantAnswer.findUnique({
+        where: {
+          participantId_questionId: {
+            participantId: participant!.id,
+            questionId: session.currentQuestionId!,
+          },
+        },
+        select: { id: true },
+      }),
+    );
+  const canAnswerCurrentQuestion =
+    !participant ||
+    !session.currentQuestionStartedAt ||
+    participant.joinedAt <= session.currentQuestionStartedAt;
+
+  return serializeSession(
+    session,
+    revealCorrectAnswers,
+    hasAnsweredCurrentQuestion,
+    canAnswerCurrentQuestion,
+  );
 }
 
 export async function getSessionByCode(roomCode: string) {
@@ -416,7 +605,7 @@ export async function getSessionByCode(roomCode: string) {
   });
 
   if (!session) {
-    throw new HttpError(404, "Active session not found");
+    throw new HttpError(404, "Активная сессия не найдена");
   }
 
   const { _count, ...details } = session;
@@ -444,7 +633,7 @@ export async function joinSession(
   });
 
   if (!session) {
-    throw new HttpError(404, "Session not found");
+    throw new HttpError(404, "Сессия не найдена");
   }
 
   assertNotFinal(session.status);
@@ -516,7 +705,7 @@ export async function joinSession(
 }
 
 export async function startSession(hostId: string, sessionId: string) {
-  return prisma.$transaction(async (transaction) => {
+  const result = await prisma.$transaction(async (transaction) => {
     const session = await transaction.quizSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -524,7 +713,6 @@ export async function startSession(hostId: string, sessionId: string) {
           include: {
             questions: {
               orderBy: { orderIndex: "asc" },
-              take: 1,
               include: currentQuestionInclude,
             },
           },
@@ -533,18 +721,22 @@ export async function startSession(hostId: string, sessionId: string) {
     });
 
     if (!session) {
-      throw new HttpError(404, "Session not found");
+      throw new HttpError(404, "Сессия не найдена");
     }
 
     assertHost(session, hostId);
 
     if (session.status !== "WAITING_FOR_PLAYERS") {
-      throw new HttpError(400, "Only a waiting session can be started");
+      throw new HttpError(400, "Запустить можно только ожидающую сессию");
     }
 
-    const firstQuestion = session.quiz.questions[0];
+    const [firstQuestion] = getSessionQuestionOrder(
+      session.id,
+      session.quiz.shuffleQuestions,
+      session.quiz.questions,
+    );
     if (!firstQuestion) {
-      throw new HttpError(400, "The quiz has no questions");
+      throw new HttpError(400, "В квизе нет вопросов");
     }
 
     const now = new Date();
@@ -562,7 +754,7 @@ export async function startSession(hostId: string, sessionId: string) {
     });
 
     if (transition.count !== 1) {
-      throw new HttpError(409, "Session state changed; reload and try again");
+      throw new HttpError(409, "Состояние сессии изменилось; обновите страницу и повторите попытку");
     }
 
     await transaction.sessionEvent.createMany({
@@ -589,12 +781,29 @@ export async function startSession(hostId: string, sessionId: string) {
       status: "QUESTION_ACTIVE" as const,
       currentQuestionStartedAt: now,
       startedAt: now,
-      currentQuestion: serializeQuestion(firstQuestion, true),
+      timeLimitSec:
+        firstQuestion.timeLimitSec ?? session.quiz.defaultTimeLimitSec,
+      currentQuestion: serializeQuestion(
+        firstQuestion,
+        true,
+        session.id,
+        session.quiz.shuffleAnswers,
+      ),
     };
   });
+
+  scheduleQuestionTimer({
+    sessionId,
+    hostId,
+    currentQuestionStartedAt: result.currentQuestionStartedAt,
+    timeLimitSec: result.timeLimitSec,
+  });
+
+  return result;
 }
 
 export async function closeQuestion(hostId: string, sessionId: string) {
+  clearQuestionTimer(sessionId);
   return prisma.$transaction(async (transaction) => {
     const session = await transaction.quizSession.findUnique({
       where: { id: sessionId },
@@ -602,13 +811,13 @@ export async function closeQuestion(hostId: string, sessionId: string) {
     });
 
     if (!session) {
-      throw new HttpError(404, "Session not found");
+      throw new HttpError(404, "Сессия не найдена");
     }
 
     assertHost(session, hostId);
 
     if (session.status !== "QUESTION_ACTIVE") {
-      throw new HttpError(400, "Only an active question can be closed");
+      throw new HttpError(400, "Закрыть можно только активный вопрос");
     }
 
     const transition = await transaction.quizSession.updateMany({
@@ -620,7 +829,7 @@ export async function closeQuestion(hostId: string, sessionId: string) {
     });
 
     if (transition.count !== 1) {
-      throw new HttpError(409, "Session state changed; reload and try again");
+      throw new HttpError(409, "Состояние сессии изменилось; обновите страницу и повторите попытку");
     }
 
     await transaction.sessionEvent.create({
@@ -649,13 +858,13 @@ export async function showAnswer(hostId: string, sessionId: string) {
     });
 
     if (!session) {
-      throw new HttpError(404, "Session not found");
+      throw new HttpError(404, "Сессия не найдена");
     }
 
     assertHost(session, hostId);
 
     if (session.status !== "QUESTION_CLOSED") {
-      throw new HttpError(400, "Answer can only be shown after closing question");
+      throw new HttpError(400, "Ответ можно показать только после закрытия вопроса");
     }
 
     const transition = await transaction.quizSession.updateMany({
@@ -667,7 +876,7 @@ export async function showAnswer(hostId: string, sessionId: string) {
     });
 
     if (transition.count !== 1) {
-      throw new HttpError(409, "Session state changed; reload and try again");
+      throw new HttpError(409, "Состояние сессии изменилось; обновите страницу и повторите попытку");
     }
 
     await transaction.sessionEvent.create({
@@ -689,18 +898,30 @@ export async function showAnswer(hostId: string, sessionId: string) {
 }
 
 export async function nextQuestion(hostId: string, sessionId: string) {
-  return prisma.$transaction(async (transaction) => {
+  clearQuestionTimer(sessionId);
+  const result = await prisma.$transaction(async (transaction) => {
     const session = await transaction.quizSession.findUnique({
       where: { id: sessionId },
       include: {
         currentQuestion: {
           select: { id: true, orderIndex: true },
         },
+        quiz: {
+          select: {
+            defaultTimeLimitSec: true,
+            shuffleQuestions: true,
+            shuffleAnswers: true,
+            questions: {
+              orderBy: { orderIndex: "asc" },
+              include: currentQuestionInclude,
+            },
+          },
+        },
       },
     });
 
     if (!session) {
-      throw new HttpError(404, "Session not found");
+      throw new HttpError(404, "Сессия не найдена");
     }
 
     assertHost(session, hostId);
@@ -711,22 +932,23 @@ export async function nextQuestion(hostId: string, sessionId: string) {
     ) {
       throw new HttpError(
         400,
-        "Next question is only available after closing the current question",
+        "Следующий вопрос доступен только после закрытия текущего вопроса",
       );
     }
 
     if (!session.currentQuestion) {
-      throw new HttpError(400, "Session has no current question");
+      throw new HttpError(400, "В сессии нет текущего вопроса");
     }
 
-    const next = await transaction.question.findFirst({
-      where: {
-        quizId: session.quizId,
-        orderIndex: { gt: session.currentQuestion.orderIndex },
-      },
-      orderBy: { orderIndex: "asc" },
-      include: currentQuestionInclude,
-    });
+    const questionOrder = getSessionQuestionOrder(
+      session.id,
+      session.quiz.shuffleQuestions,
+      session.quiz.questions,
+    );
+    const currentIndex = questionOrder.findIndex(
+      (question) => question.id === session.currentQuestion?.id,
+    );
+    const next = questionOrder[currentIndex + 1];
 
     if (!next) {
       return finishSessionTransaction(transaction, sessionId, hostId);
@@ -747,7 +969,7 @@ export async function nextQuestion(hostId: string, sessionId: string) {
     });
 
     if (transition.count !== 1) {
-      throw new HttpError(409, "Session state changed; reload and try again");
+      throw new HttpError(409, "Состояние сессии изменилось; обновите страницу и повторите попытку");
     }
 
     await transaction.sessionEvent.create({
@@ -765,13 +987,32 @@ export async function nextQuestion(hostId: string, sessionId: string) {
         id: session.id,
         status: "QUESTION_ACTIVE" as const,
         currentQuestionStartedAt: now,
-        currentQuestion: serializeQuestion(next, true),
+        timeLimitSec:
+          next.timeLimitSec ?? session.quiz.defaultTimeLimitSec,
+        currentQuestion: serializeQuestion(
+          next,
+          true,
+          session.id,
+          session.quiz.shuffleAnswers,
+        ),
       },
     };
   });
+
+  if (!("leaderboard" in result)) {
+    scheduleQuestionTimer({
+      sessionId,
+      hostId,
+      currentQuestionStartedAt: result.session.currentQuestionStartedAt,
+      timeLimitSec: result.session.timeLimitSec,
+    });
+  }
+
+  return result;
 }
 
 export async function finishSession(hostId: string, sessionId: string) {
+  clearQuestionTimer(sessionId);
   return prisma.$transaction(
     (transaction) =>
       finishSessionTransaction(transaction, sessionId, hostId),
@@ -782,6 +1023,7 @@ export async function finishSession(hostId: string, sessionId: string) {
 }
 
 export async function cancelSession(hostId: string, sessionId: string) {
+  clearQuestionTimer(sessionId);
   return prisma.$transaction(async (transaction) => {
     const session = await transaction.quizSession.findUnique({
       where: { id: sessionId },
@@ -789,17 +1031,17 @@ export async function cancelSession(hostId: string, sessionId: string) {
     });
 
     if (!session) {
-      throw new HttpError(404, "Session not found");
+      throw new HttpError(404, "Сессия не найдена");
     }
 
     assertHost(session, hostId);
 
     if (session.status === "FINISHED") {
-      throw new HttpError(400, "A finished session cannot be cancelled");
+      throw new HttpError(400, "Завершённую сессию нельзя отменить");
     }
 
     if (session.status === "CANCELLED") {
-      throw new HttpError(400, "Session is already cancelled");
+      throw new HttpError(400, "Сессия уже отменена");
     }
 
     const transition = await transaction.quizSession.updateMany({
@@ -815,7 +1057,7 @@ export async function cancelSession(hostId: string, sessionId: string) {
     });
 
     if (transition.count !== 1) {
-      throw new HttpError(409, "Session state changed; reload and try again");
+      throw new HttpError(409, "Состояние сессии изменилось; обновите страницу и повторите попытку");
     }
 
     await transaction.sessionEvent.create({
@@ -859,7 +1101,7 @@ export async function submitAnswer(
         });
 
         if (!session) {
-          throw new HttpError(404, "Session not found");
+          throw new HttpError(404, "Сессия не найдена");
         }
 
         if (
@@ -867,11 +1109,11 @@ export async function submitAnswer(
           !session.currentQuestion ||
           !session.currentQuestionStartedAt
         ) {
-          throw new HttpError(400, "The session is not accepting answers");
+          throw new HttpError(400, "Сессия сейчас не принимает ответы");
         }
 
         if (input.questionId !== session.currentQuestionId) {
-          throw new HttpError(400, "Answer is not for the current question");
+          throw new HttpError(400, "Ответ относится не к текущему вопросу");
         }
 
         const participant =
@@ -885,7 +1127,14 @@ export async function submitAnswer(
           });
 
         if (!participant || participant.status !== "JOINED") {
-          throw new HttpError(403, "You have not joined this session");
+          throw new HttpError(403, "Вы не подключились к этой сессии");
+        }
+
+        if (participant.joinedAt > session.currentQuestionStartedAt) {
+          throw new HttpError(
+            403,
+            "Вы подключились после начала вопроса. Ответить можно будет на следующий вопрос.",
+          );
         }
 
         const question = session.currentQuestion;
@@ -895,7 +1144,7 @@ export async function submitAnswer(
         ) {
           throw new HttpError(
             400,
-            "SINGLE_CHOICE questions require exactly one option",
+            "Для вопроса с одним ответом нужно выбрать ровно один вариант",
           );
         }
 
@@ -909,7 +1158,7 @@ export async function submitAnswer(
         ) {
           throw new HttpError(
             400,
-            "One or more selected options do not belong to this question",
+            "Один или несколько выбранных вариантов не относятся к этому вопросу",
           );
         }
 
@@ -922,7 +1171,7 @@ export async function submitAnswer(
           question.timeLimitSec ?? session.quiz.defaultTimeLimitSec;
 
         if (responseTimeMs > timeLimitSec * 1000) {
-          throw new HttpError(400, "The answer time limit has expired");
+          throw new HttpError(400, "Время на ответ истекло");
         }
 
         const correctOptionIds = question.answerOptions
@@ -933,9 +1182,16 @@ export async function submitAnswer(
           selectedSet.size === correctOptionIds.length &&
           correctOptionIds.every((optionId) => selectedSet.has(optionId));
 
-        // TIME_BASED currently uses fixed points. A time bonus can be added
-        // without changing the persisted answer contract.
-        const scoreAwarded = isCorrect ? question.points : 0;
+        const totalTimeMs = timeLimitSec * 1000;
+        const remainingTimeRatio = Math.max(
+          0,
+          (totalTimeMs - responseTimeMs) / totalTimeMs,
+        );
+        const scoreAwarded = !isCorrect
+          ? 0
+          : session.quiz.scoringMode === "TIME_BASED"
+            ? Math.max(1, Math.round(question.points * remainingTimeRatio))
+            : question.points;
 
         const answer = await transaction.participantAnswer.create({
           data: {
@@ -950,17 +1206,12 @@ export async function submitAnswer(
           },
         });
 
-        const updatedParticipant =
-          await transaction.sessionParticipant.update({
-            where: { id: participant.id },
-            data: {
-              score: { increment: scoreAwarded },
-            },
-            select: {
-              id: true,
-              score: true,
-            },
-          });
+        await transaction.sessionParticipant.update({
+          where: { id: participant.id },
+          data: {
+            score: { increment: scoreAwarded },
+          },
+        });
 
         await transaction.sessionEvent.create({
           data: {
@@ -982,12 +1233,8 @@ export async function submitAnswer(
             id: answer.id,
             questionId: answer.questionId,
             selectedOptionIds: answer.selectedOptionIds,
-            isCorrect: answer.isCorrect,
-            scoreAwarded: answer.scoreAwarded,
-            responseTimeMs: answer.responseTimeMs,
             answeredAt: answer.answeredAt,
           },
-          participantScore: updatedParticipant.score,
         };
       },
       {
@@ -1001,7 +1248,7 @@ export async function submitAnswer(
     ) {
       throw new HttpError(
         409,
-        "You have already answered this question",
+        "Вы уже ответили на этот вопрос",
       );
     }
 
@@ -1032,7 +1279,7 @@ export async function getResults(user: AuthUser, sessionId: string) {
   });
 
   if (!session) {
-    throw new HttpError(404, "Session not found");
+    throw new HttpError(404, "Сессия не найдена");
   }
 
   const participant = session.participants.find(
@@ -1043,7 +1290,19 @@ export async function getResults(user: AuthUser, sessionId: string) {
     !participant &&
     user.role !== "ADMIN"
   ) {
-    throw new HttpError(403, "You do not have access to these results");
+    throw new HttpError(403, "Нет доступа к этим результатам");
+  }
+
+  if (
+    participant &&
+    session.hostId !== user.id &&
+    user.role !== "ADMIN" &&
+    session.status !== "FINISHED"
+  ) {
+    throw new HttpError(
+      409,
+      "Результаты будут доступны после завершения квиза",
+    );
   }
 
   const leaderboard = session.participants
@@ -1101,7 +1360,7 @@ export async function getCurrentQuestionAnswersCount(sessionId: string) {
   });
 
   if (!session) {
-    throw new HttpError(404, "Session not found");
+    throw new HttpError(404, "Сессия не найдена");
   }
 
   if (!session.currentQuestionId) {
@@ -1114,6 +1373,49 @@ export async function getCurrentQuestionAnswersCount(sessionId: string) {
       questionId: session.currentQuestionId,
     },
   });
+}
+
+export async function getActiveQuestionTimers() {
+  const sessions = await prisma.quizSession.findMany({
+    where: {
+      status: "QUESTION_ACTIVE",
+      currentQuestionId: { not: null },
+      currentQuestionStartedAt: { not: null },
+    },
+    select: {
+      id: true,
+      hostId: true,
+      currentQuestionStartedAt: true,
+      currentQuestion: {
+        select: { timeLimitSec: true },
+      },
+      quiz: {
+        select: { defaultTimeLimitSec: true },
+      },
+    },
+  });
+
+  return sessions.flatMap((session) =>
+    session.currentQuestionStartedAt
+      ? [
+          {
+            sessionId: session.id,
+            hostId: session.hostId,
+            currentQuestionStartedAt: session.currentQuestionStartedAt,
+            timeLimitSec:
+              session.currentQuestion?.timeLimitSec ??
+              session.quiz.defaultTimeLimitSec,
+          },
+        ]
+      : [],
+  );
+}
+
+export async function restoreActiveQuestionTimers() {
+  const timers = await getActiveQuestionTimers();
+  for (const timer of timers) {
+    scheduleQuestionTimer(timer);
+  }
 }
 
 export async function getHostedSessions(hostId: string) {

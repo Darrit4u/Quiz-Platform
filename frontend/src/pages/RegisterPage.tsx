@@ -4,6 +4,7 @@ import { getErrorMessage } from "@/api/httpClient";
 import { useAuth } from "@/auth/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { cn } from "@/lib/cn";
 import type { User, UserRole } from "@/types/user";
 
@@ -19,6 +20,7 @@ export function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [role, setRole] = useState<RegistrationRole>("ORGANIZER");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,6 +28,12 @@ export function RegisterPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
+
+    if (password !== passwordConfirmation) {
+      setError("Пароли не совпадают.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -42,27 +50,27 @@ export function RegisterPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-zinc-900">
-          Create an account
+          Создание аккаунта
         </h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Start organizing or joining sessions today.
+          Создавайте квизы или участвуйте в них.
         </p>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
-          <span>Full Name</span>
+          <span>Имя</span>
           <Input
             autoComplete="name"
             minLength={2}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Jane Doe"
+            placeholder="Иван Иванов"
             required
             value={name}
           />
         </label>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
-          <span>Email</span>
+          <span>Электронная почта</span>
           <Input
             autoComplete="email"
             onChange={(event) => setEmail(event.target.value)}
@@ -73,20 +81,29 @@ export function RegisterPage() {
           />
         </label>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
-          <span>Password</span>
-          <Input
+          <span>Пароль</span>
+          <PasswordInput
             autoComplete="new-password"
             minLength={8}
             onChange={(event) => setPassword(event.target.value)}
             required
-            type="password"
             value={password}
+          />
+        </label>
+        <label className="block space-y-2 text-sm font-medium text-zinc-900">
+          <span>Повторите пароль</span>
+          <PasswordInput
+            autoComplete="new-password"
+            minLength={8}
+            onChange={(event) => setPasswordConfirmation(event.target.value)}
+            required
+            value={passwordConfirmation}
           />
         </label>
 
         <fieldset className="space-y-3 pt-2">
           <legend className="text-sm font-medium text-zinc-900">
-            I want to...
+            Я хочу...
           </legend>
           <div className="grid grid-cols-2 gap-4">
             <button
@@ -99,7 +116,7 @@ export function RegisterPage() {
               onClick={() => setRole("ORGANIZER")}
               type="button"
             >
-              Host Quizzes
+              Проводить квизы
             </button>
             <button
               className={cn(
@@ -111,7 +128,7 @@ export function RegisterPage() {
               onClick={() => setRole("PARTICIPANT")}
               type="button"
             >
-              Join Quizzes
+              Участвовать в квизах
             </button>
           </div>
         </fieldset>
@@ -127,17 +144,17 @@ export function RegisterPage() {
           disabled={isSubmitting}
           type="submit"
         >
-          {isSubmitting ? "Creating Account..." : "Create Account"}
+          {isSubmitting ? "Создание аккаунта..." : "Создать аккаунт"}
         </Button>
       </form>
 
       <p className="text-center text-sm text-zinc-500">
-        Already have an account?{" "}
+        Уже есть аккаунт?{" "}
         <Link
           className="font-medium text-violet-600 hover:text-violet-500"
           to="/login"
         >
-          Sign in
+          Войти
         </Link>
       </p>
     </div>

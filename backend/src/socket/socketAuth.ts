@@ -27,7 +27,7 @@ export function socketAuth(
         : null;
 
   if (!token) {
-    next(new Error("Authentication token is required"));
+    next(new Error("Требуется токен авторизации"));
     return;
   }
 
@@ -35,6 +35,6 @@ export function socketAuth(
     socket.data.user = verifyAccessToken(token);
     next();
   } catch {
-    next(new Error("Invalid or expired access token"));
+    next(new Error("Токен доступа недействителен или истёк"));
   }
 }

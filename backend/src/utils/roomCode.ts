@@ -28,5 +28,5 @@ export async function generateUniqueRoomCode(
     }
   }
 
-  throw new HttpError(503, "Could not generate a unique room code");
+  throw new HttpError(503, "Не удалось создать уникальный код комнаты");
 }

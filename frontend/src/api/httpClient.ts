@@ -59,7 +59,7 @@ export async function httpClient<T>(
   } catch {
     throw new ApiError(
       0,
-      "Cannot connect to the API. Check that the backend is running.",
+      "Не удалось подключиться к серверу. Проверьте, что backend запущен.",
     );
   }
 
@@ -71,7 +71,8 @@ export async function httpClient<T>(
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new ApiError(
       response.status,
-      body.error?.message ?? `Request failed with status ${response.status}`,
+      body.error?.message ??
+        `Запрос завершился с ошибкой ${response.status}`,
       body.error?.details,
     );
   }
@@ -94,5 +95,5 @@ export function getErrorMessage(error: unknown) {
     }
   }
 
-  return error instanceof Error ? error.message : "Unexpected error";
+  return error instanceof Error ? error.message : "Непредвиденная ошибка";
 }

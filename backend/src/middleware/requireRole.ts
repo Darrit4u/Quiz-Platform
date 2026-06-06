@@ -5,12 +5,12 @@ import { HttpError } from "../utils/httpError.js";
 export function requireRole(...roles: UserRole[]) {
   return (request: Request, _response: Response, next: NextFunction) => {
     if (!request.user) {
-      next(new HttpError(401, "Authentication is required"));
+      next(new HttpError(401, "Требуется авторизация"));
       return;
     }
 
     if (!roles.includes(request.user.role)) {
-      next(new HttpError(403, "You do not have permission for this action"));
+      next(new HttpError(403, "Недостаточно прав для выполнения этого действия"));
       return;
     }
 

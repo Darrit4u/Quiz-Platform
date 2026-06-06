@@ -4,6 +4,7 @@ import { getErrorMessage } from "@/api/httpClient";
 import { useAuth } from "@/auth/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import type { User } from "@/types/user";
 
 function getDestination(user: User) {
@@ -37,16 +38,16 @@ export function LoginPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-zinc-900">
-          Sign in to your account
+          Вход в аккаунт
         </h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Welcome back. Please enter your details.
+          Введите данные для входа.
         </p>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
-          <span>Email</span>
+          <span>Электронная почта</span>
           <Input
             autoComplete="email"
             onChange={(event) => setEmail(event.target.value)}
@@ -58,13 +59,12 @@ export function LoginPage() {
         </label>
 
         <label className="block space-y-2 text-sm font-medium text-zinc-900">
-          <span>Password</span>
-          <Input
+          <span>Пароль</span>
+          <PasswordInput
             autoComplete="current-password"
             minLength={1}
             onChange={(event) => setPassword(event.target.value)}
             required
-            type="password"
             value={password}
           />
         </label>
@@ -76,17 +76,17 @@ export function LoginPage() {
         )}
 
         <Button className="w-full" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Signing In..." : "Sign In"}
+          {isSubmitting ? "Вход..." : "Войти"}
         </Button>
       </form>
 
       <p className="text-center text-sm text-zinc-500">
-        Don&apos;t have an account?{" "}
+        Нет аккаунта?{" "}
         <Link
           className="font-medium text-violet-600 hover:text-violet-500"
           to="/register"
         >
-          Sign up
+          Зарегистрироваться
         </Link>
       </p>
     </div>

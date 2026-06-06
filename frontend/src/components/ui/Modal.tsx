@@ -29,7 +29,7 @@ export function Modal({ open, title, children, onClose }: ModalProps) {
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-950">{title}</h2>
           <Button
-            aria-label="Close modal"
+            aria-label="Закрыть окно"
             className="px-2"
             onClick={onClose}
             size="sm"

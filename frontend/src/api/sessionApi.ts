@@ -1,6 +1,7 @@
 import { httpClient } from "@/api/httpClient";
 import type {
   ApiSession,
+  HostedSession,
   JoinedSession,
   SessionLookup,
   SessionResults,
@@ -33,4 +34,19 @@ export async function joinSession(roomCode: string, displayName: string) {
 
 export async function getSessionResults(sessionId: string) {
   return httpClient<SessionResults>(`/sessions/${sessionId}/results`);
+}
+
+export async function cancelSession(sessionId: string) {
+  const response = await httpClient<{ session: ApiSession }>(
+    `/sessions/${sessionId}/cancel`,
+    { method: "POST" },
+  );
+  return response.session;
+}
+
+export async function getHostedSessions() {
+  const response = await httpClient<{ sessions: HostedSession[] }>(
+    "/sessions/hosted",
+  );
+  return response.sessions;
 }

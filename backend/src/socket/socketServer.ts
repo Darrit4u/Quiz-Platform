@@ -1,7 +1,10 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { env } from "../config/env.js";
-import { registerSessionSocketHandlers } from "./sessionSocketHandlers.js";
+import {
+  initializeSessionTimers,
+  registerSessionSocketHandlers,
+} from "./sessionSocketHandlers.js";
 import { socketAuth } from "./socketAuth.js";
 import type {
   ClientToServerEvents,
@@ -25,6 +28,9 @@ export function createSocketServer(httpServer: HttpServer) {
   io.use(socketAuth);
   io.on("connection", (socket) => {
     registerSessionSocketHandlers(io, socket);
+  });
+  void initializeSessionTimers(io).catch((error: unknown) => {
+    console.error("Failed to restore question timers:", error);
   });
 
   return io;

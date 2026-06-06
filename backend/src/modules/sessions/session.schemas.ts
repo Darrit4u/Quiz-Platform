@@ -28,7 +28,7 @@ export const submitAnswerSchema = z.object({
     .min(1)
     .max(20)
     .refine((ids) => new Set(ids).size === ids.length, {
-      message: "Selected option IDs must be unique",
+      message: "Выбранные варианты ответа не должны повторяться",
     }),
 });
 

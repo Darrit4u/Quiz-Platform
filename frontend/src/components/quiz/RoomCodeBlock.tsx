@@ -18,7 +18,7 @@ export function RoomCodeBlock({ code }: RoomCodeBlockProps) {
   return (
     <div className="space-y-4 text-center">
       <p className="text-sm font-medium uppercase tracking-wider text-zinc-500">
-        Join at quizplatform.com with code
+        Подключитесь к квизу по коду
       </p>
       <div className="rounded-2xl border border-zinc-200 bg-white px-12 py-6 shadow-sm">
         <span className="text-7xl font-bold tracking-widest text-zinc-950">
@@ -28,11 +28,11 @@ export function RoomCodeBlock({ code }: RoomCodeBlockProps) {
       <div className="flex items-center justify-center gap-3">
         <Button onClick={copyCode} size="sm" variant="outline">
           <Copy className="mr-2 h-4 w-4" />
-          {copied ? "Copied" : "Copy Code"}
+          {copied ? "Скопировано" : "Копировать код"}
         </Button>
         <Button size="sm" variant="outline">
           <QrCode className="mr-2 h-4 w-4" />
-          QR Code
+          QR-код
         </Button>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { updateQuiz } from "@/api/quizApi";
 import { createSession } from "@/api/sessionApi";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { formatDate } from "@/lib/formatDate";
 import type { Quiz } from "@/types/quiz";
 
 interface QuizCardProps {
@@ -14,13 +15,14 @@ interface QuizCardProps {
 }
 
 const statusLabels = {
-  DRAFT: "Draft",
-  PUBLISHED: "Published",
-  ARCHIVED: "Archived",
+  DRAFT: "Черновик",
+  PUBLISHED: "Опубликован",
+  ARCHIVED: "В архиве",
 } as const;
 
 export function QuizCard({ quiz, onQuizUpdated }: QuizCardProps) {
   const isPublished = quiz.status === "PUBLISHED";
+  const isEditingLocked = quiz.hasActiveSession === true;
   const navigate = useNavigate();
   const [isStarting, setIsStarting] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -79,50 +81,66 @@ export function QuizCard({ quiz, onQuizUpdated }: QuizCardProps) {
           </Badge>
         </div>
         <div className="flex items-center gap-3 text-sm text-zinc-500">
-          <span>{quiz.questionCount ?? quiz.questions?.length ?? 0} questions</span>
+          <span>
+            Вопросов: {quiz.questionCount ?? quiz.questions?.length ?? 0}
+          </span>
           <span aria-hidden="true">•</span>
-          <span>Updated {new Date(quiz.updatedAt).toLocaleDateString()}</span>
+          <span>Изменён {formatDate(quiz.updatedAt)}</span>
           {(quiz.sessionCount ?? 0) > 0 && (
             <>
               <span aria-hidden="true">•</span>
-              <span>{quiz.sessionCount} sessions</span>
+              <span>Сессий: {quiz.sessionCount}</span>
             </>
           )}
         </div>
+        {isEditingLocked && (
+          <p className="text-sm text-amber-700">
+            Редактирование недоступно, пока активна сессия.
+          </p>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
       <div className="flex items-center gap-2">
-        <Link to={`/organizer/quizzes/${quiz.id}/questions`}>
-          <Button size="sm" variant="outline">
+        {isEditingLocked ? (
+          <Button disabled size="sm" variant="outline">
             <Settings2 className="mr-2 h-4 w-4" />
-            Edit
+            Редактировать
           </Button>
-        </Link>
+        ) : (
+          <Link to={`/organizer/quizzes/${quiz.id}/questions`}>
+            <Button size="sm" variant="outline">
+              <Settings2 className="mr-2 h-4 w-4" />
+              Редактировать
+            </Button>
+          </Link>
+        )}
         {quiz.status === "DRAFT" && (
           <Button
-            disabled={isUpdatingStatus}
+            disabled={isUpdatingStatus || isEditingLocked}
             onClick={handleStatusChange}
             size="sm"
             variant="secondary"
           >
             <Upload className="mr-2 h-4 w-4" />
-            {isUpdatingStatus ? "Publishing..." : "Publish"}
+            {isUpdatingStatus ? "Публикация..." : "Опубликовать"}
           </Button>
         )}
         {isPublished && (
           <>
             <Button
-              disabled={isUpdatingStatus}
+              disabled={isUpdatingStatus || isEditingLocked}
               onClick={handleStatusChange}
               size="sm"
               variant="outline"
             >
               <EyeOff className="mr-2 h-4 w-4" />
-              {isUpdatingStatus ? "Unpublishing..." : "Unpublish"}
+              {isUpdatingStatus
+                ? "Снятие с публикации..."
+                : "Снять с публикации"}
             </Button>
             <Button disabled={isStarting} onClick={handleHost} size="sm">
               <Play className="mr-2 h-4 w-4" />
-              {isStarting ? "Starting..." : "Host"}
+              {isStarting ? "Запуск..." : "Провести"}
             </Button>
           </>
         )}

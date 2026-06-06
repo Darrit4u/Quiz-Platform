@@ -34,7 +34,7 @@ export function verifyAccessToken(token: string): AuthUser {
         payload.role !== "PARTICIPANT" &&
         payload.role !== "ADMIN")
     ) {
-      throw new HttpError(401, "Invalid access token");
+      throw new HttpError(401, "Недействительный токен доступа");
     }
 
     return {
@@ -46,6 +46,6 @@ export function verifyAccessToken(token: string): AuthUser {
     if (error instanceof HttpError) {
       throw error;
     }
-    throw new HttpError(401, "Invalid or expired access token");
+    throw new HttpError(401, "Токен доступа недействителен или истёк");
   }
 }

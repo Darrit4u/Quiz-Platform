@@ -5,6 +5,7 @@ import { createSessionSocket } from "@/socket/socket";
 import type {
   AnswerStatus,
   SessionLeaderboardEntry,
+  SessionCommand,
   SessionParticipant,
   SessionQuestion,
   SessionState,
@@ -35,6 +36,7 @@ interface UseSessionSocketResult {
   answersCount: number;
   remainingSeconds: number;
   error: string;
+  pendingCommand: SessionCommand | null;
   startSession: () => void;
   closeQuestion: () => void;
   showAnswer: () => void;
@@ -60,6 +62,8 @@ export function useSessionSocket(
   const [answersCount, setAnswersCount] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [error, setError] = useState("");
+  const [pendingCommand, setPendingCommand] =
+    useState<SessionCommand | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -84,16 +88,34 @@ export function useSessionSocket(
       setError("");
       socket.emit("session:join", { sessionId });
     });
-    socket.on("disconnect", () => setIsConnected(false));
-    socket.on("connect_error", (connectionError) => {
-      setError(connectionError.message);
+    socket.on("disconnect", () => {
+      setIsConnected(false);
+      setPendingCommand(null);
+      setError("Соединение потеряно. Выполняется повторное подключение...");
+    });
+    socket.on("connect_error", () => {
+      setIsConnected(false);
+      setPendingCommand(null);
+      setError("Не удалось подключиться к серверу");
     });
     socket.on("error", (payload: { message?: string }) => {
-      setError(payload.message ?? "Socket error");
+      setError(payload.message ?? "Ошибка соединения");
+      setPendingCommand(null);
     });
     socket.on("session:state-updated", (payload: SessionState) => {
       syncClock(payload.serverTime);
       setSessionState(payload);
+      setPendingCommand(null);
+      setError("");
+      if (payload.hasAnsweredCurrentQuestion) {
+        setAnswerStatus((current) =>
+          current.state === "accepted" ? current : { state: "submitted" },
+        );
+      } else {
+        setAnswerStatus((current) =>
+          current.state === "submitted" ? { state: "idle" } : current,
+        );
+      }
     });
     socket.on(
       "session:participants-updated",
@@ -113,6 +135,8 @@ export function useSessionSocket(
       setCurrentQuestion(payload.question);
       setAnswersCount(0);
       setAnswerStatus({ state: "idle" });
+      setPendingCommand(null);
+      setError("");
       setSessionState((current) =>
         current
           ? {
@@ -129,6 +153,8 @@ export function useSessionSocket(
       "quiz:question-closed",
       (payload: { answersCount?: number }) => {
         setAnswersCount(payload.answersCount ?? 0);
+        setPendingCommand(null);
+        setError("");
         setSessionState((current) =>
           current ? { ...current, status: "QUESTION_CLOSED" } : current,
         );
@@ -150,6 +176,8 @@ export function useSessionSocket(
       if (payload.leaderboard) {
         setLeaderboard(payload.leaderboard);
       }
+      setPendingCommand(null);
+      setError("");
     });
     socket.on(
       "leaderboard:updated",
@@ -159,17 +187,9 @@ export function useSessionSocket(
     );
     socket.on(
       "participant:answer-accepted",
-      (payload: {
-        isCorrect: boolean;
-        scoreAwarded: number;
-        currentScore: number;
-      }) => {
-        setAnswerStatus({
-          state: "accepted",
-          isCorrect: payload.isCorrect,
-          scoreAwarded: payload.scoreAwarded,
-          currentScore: payload.currentScore,
-        });
+      () => {
+        setAnswerStatus({ state: "accepted" });
+        setError("");
       },
     );
     socket.on(
@@ -177,7 +197,7 @@ export function useSessionSocket(
       (payload: { reason?: string }) => {
         setAnswerStatus({
           state: "rejected",
-          reason: payload.reason ?? "Answer rejected",
+          reason: payload.reason ?? "Ответ отклонён",
         });
       },
     );
@@ -185,6 +205,8 @@ export function useSessionSocket(
       "quiz:finished",
       (payload: { leaderboard: SessionLeaderboardEntry[] }) => {
         setLeaderboard(payload.leaderboard);
+        setPendingCommand(null);
+        setError("");
         setSessionState((current) =>
           current
             ? {
@@ -233,12 +255,27 @@ export function useSessionSocket(
   const emit = useCallback(
     (event: string, payload: Record<string, unknown>) => {
       if (!socketRef.current?.connected) {
-        setError("Real-time connection is not ready");
-        return;
+        setError("Соединение с сервером ещё не установлено");
+        return false;
       }
+      setError("");
       socketRef.current.emit(event, payload);
+      return true;
     },
     [],
+  );
+
+  const runCommand = useCallback(
+    (command: SessionCommand, event: string) => {
+      if (pendingCommand) {
+        return;
+      }
+      setPendingCommand(command);
+      if (!emit(event, { sessionId })) {
+        setPendingCommand(null);
+      }
+    },
+    [emit, pendingCommand, sessionId],
   );
 
   return {
@@ -250,25 +287,39 @@ export function useSessionSocket(
     answerStatus,
     answersCount,
     remainingSeconds,
+    pendingCommand,
     error:
       error ||
       (!sessionId
-        ? "Session ID is missing"
+        ? "Не указан идентификатор сессии"
         : !getStoredToken()
-          ? "Authentication is required"
+          ? "Требуется авторизация"
           : ""),
-    startSession: () => emit("organizer:session-start", { sessionId }),
-    closeQuestion: () => emit("organizer:question-close", { sessionId }),
-    showAnswer: () => emit("organizer:show-answer", { sessionId }),
-    nextQuestion: () => emit("organizer:next-question", { sessionId }),
-    finishSession: () => emit("organizer:session-finish", { sessionId }),
+    startSession: () => runCommand("start", "organizer:session-start"),
+    closeQuestion: () => runCommand("close", "organizer:question-close"),
+    showAnswer: () => runCommand("show-answer", "organizer:show-answer"),
+    nextQuestion: () => runCommand("next", "organizer:next-question"),
+    finishSession: () => runCommand("finish", "organizer:session-finish"),
     submitAnswer: (questionId, selectedOptionIds) => {
+      if (
+        answerStatus.state === "pending" ||
+        answerStatus.state === "accepted" ||
+        answerStatus.state === "submitted" ||
+        sessionState?.canAnswerCurrentQuestion === false
+      ) {
+        return;
+      }
       setAnswerStatus({ state: "pending" });
-      emit("participant:submit-answer", {
+      if (!emit("participant:submit-answer", {
         sessionId,
         questionId,
         selectedOptionIds,
-      });
+      })) {
+        setAnswerStatus({
+          state: "rejected",
+          reason: "Соединение с сервером ещё не установлено",
+        });
+      }
     },
   };
 }

@@ -9,11 +9,13 @@ import { AuthLayout } from "@/components/layout/AuthLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ResultsPage } from "@/pages/ResultsPage";
+import { AllQuizzesPage } from "@/pages/organizer/AllQuizzesPage";
 import { CreateQuizPage } from "@/pages/organizer/CreateQuizPage";
 import { HostLobbyPage } from "@/pages/organizer/HostLobbyPage";
 import { HostQuizPage } from "@/pages/organizer/HostQuizPage";
 import { OrganizerDashboardPage } from "@/pages/organizer/OrganizerDashboardPage";
 import { QuestionEditorPage } from "@/pages/organizer/QuestionEditorPage";
+import { SessionHistoryPage } from "@/pages/organizer/SessionHistoryPage";
 import { ParticipantJoinPage } from "@/pages/participant/ParticipantJoinPage";
 import { ParticipantLobbyPage } from "@/pages/participant/ParticipantLobbyPage";
 import { ParticipantQuestionPage } from "@/pages/participant/ParticipantQuestionPage";
@@ -43,8 +45,10 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <OrganizerDashboardPage /> },
+          { path: "quizzes", element: <AllQuizzesPage /> },
           { path: "quizzes/new", element: <CreateQuizPage /> },
           { path: "quizzes/:quizId/questions", element: <QuestionEditorPage /> },
+          { path: "sessions", element: <SessionHistoryPage /> },
         ],
       },
       {

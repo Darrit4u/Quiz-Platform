@@ -7,6 +7,7 @@ export interface AuthContextValue {
   isLoading: boolean;
   login: (input: authApi.LoginInput) => Promise<User>;
   register: (input: authApi.RegisterInput) => Promise<User>;
+  updateProfile: (name: string) => Promise<User>;
   logout: () => void;
 }
 

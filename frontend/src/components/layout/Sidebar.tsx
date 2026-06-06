@@ -1,12 +1,30 @@
-import { LayoutDashboard, LogOut, PlusCircle } from "lucide-react";
+import {
+  History,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  PlusCircle,
+} from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 import { cn } from "@/lib/cn";
 
 const navigation = [
-  { name: "Dashboard", href: "/organizer", icon: LayoutDashboard, exact: true },
+  { name: "Главная", href: "/organizer", icon: LayoutDashboard, exact: true },
   {
-    name: "Create Quiz",
+    name: "Все квизы",
+    href: "/organizer/quizzes",
+    icon: ListChecks,
+    exact: true,
+  },
+  {
+    name: "История сессий",
+    href: "/organizer/sessions",
+    icon: History,
+    exact: true,
+  },
+  {
+    name: "Создать квиз",
     href: "/organizer/quizzes/new",
     icon: PlusCircle,
     exact: false,
@@ -66,7 +84,7 @@ export function Sidebar() {
             type="button"
           >
             <LogOut className="mr-3 h-5 w-5 text-zinc-400" />
-            Sign Out
+            Выйти
           </button>
         </div>
       </div>

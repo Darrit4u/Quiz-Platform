@@ -13,8 +13,8 @@ export function ParticipantLobbyPage() {
   const navigate = useNavigate();
   const { roomId } = useParams();
   const state = location.state as JoinState | null;
-  const participantName = state?.participantName || "Alex Chen";
-  const { sessionState, error } = useSessionSocket(roomId);
+  const participantName = state?.participantName || "Участник";
+  const { isConnected, sessionState, error } = useSessionSocket(roomId);
 
   useEffect(() => {
     if (sessionState?.status === "QUESTION_ACTIVE" && roomId) {
@@ -24,6 +24,9 @@ export function ParticipantLobbyPage() {
     }
     if (sessionState?.status === "FINISHED" && roomId) {
       navigate(`/results/${roomId}`, { state: { from: "participant" } });
+    }
+    if (sessionState?.status === "CANCELLED") {
+      navigate("/participant/join", { replace: true });
     }
   }, [navigate, participantName, roomId, sessionState?.status]);
 
@@ -36,10 +39,10 @@ export function ParticipantLobbyPage() {
 
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-            You&apos;re in!
+            Вы подключились!
           </h1>
           <p className="mt-2 text-zinc-500">
-            See your name on the host&apos;s screen.
+            Ваше имя появилось на экране организатора.
           </p>
         </div>
 
@@ -52,29 +55,37 @@ export function ParticipantLobbyPage() {
             <div className="h-px bg-zinc-100" />
             <div>
               <p className="text-sm font-medium text-zinc-900">
-                {sessionState?.quizTitle ?? "Loading quiz..."}
+                {sessionState?.quizTitle ?? "Загрузка квиза..."}
               </p>
               <p className="mt-1 text-xs text-zinc-500">
-                Room {sessionState?.roomCode ?? "..."}
+                Комната {sessionState?.roomCode ?? "..."}
               </p>
             </div>
           </CardContent>
         </Card>
 
         <div className="space-y-4 pt-8">
-          <div className="flex justify-center gap-2">
-            {[0, 150, 300].map((delay) => (
-              <span
-                className="h-2 w-2 animate-bounce rounded-full bg-violet-600"
-                key={delay}
-                style={{ animationDelay: `${delay}ms` }}
-              />
-            ))}
-          </div>
+          {!error && (
+            <div className="flex justify-center gap-2">
+              {[0, 150, 300].map((delay) => (
+                <span
+                  className="h-2 w-2 animate-bounce rounded-full bg-violet-600"
+                  key={delay}
+                  style={{ animationDelay: `${delay}ms` }}
+                />
+              ))}
+            </div>
+          )}
           <p className="text-sm font-medium uppercase tracking-widest text-zinc-500">
-            Waiting for host to start...
+            {isConnected
+              ? "Ожидание запуска организатором..."
+              : "Подключение..."}
           </p>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </p>
+          )}
         </div>
       </div>
     </main>

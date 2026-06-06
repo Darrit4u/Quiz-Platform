@@ -8,6 +8,7 @@ import { useAuth } from "@/auth/useAuth";
 import { LeaderboardTable } from "@/components/quiz/LeaderboardTable";
 import { Button } from "@/components/ui/Button";
 import type { LeaderboardEntry } from "@/types/room";
+import type { SessionStatus } from "@/types/session";
 
 interface ResultsState {
   from?: "organizer" | "participant";
@@ -19,15 +20,18 @@ export function ResultsPage() {
   const { roomId } = useParams();
   const { user } = useAuth();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [quizTitle, setQuizTitle] = useState("Quiz");
+  const [quizTitle, setQuizTitle] = useState("Квиз");
+  const [sessionStatus, setSessionStatus] =
+    useState<SessionStatus | null>(null);
+  const [isLoading, setIsLoading] = useState(Boolean(roomId));
   const [error, setError] = useState("");
   const state = location.state as ResultsState | null;
   const isParticipant =
     state?.from === "participant" || user?.role === "PARTICIPANT";
   const destination = isParticipant ? "/participant/join" : "/organizer";
   const destinationLabel = isParticipant
-    ? "Join Another Quiz"
-    : "Back to Dashboard";
+    ? "Присоединиться к другому квизу"
+    : "Вернуться на главную";
 
   useEffect(() => {
     if (!roomId) {
@@ -35,9 +39,14 @@ export function ResultsPage() {
     }
 
     const loadResults = async () => {
+      setIsLoading(true);
+      setError("");
+      setEntries([]);
+      setSessionStatus(null);
       try {
         const result = await getSessionResults(roomId);
         setQuizTitle(result.session.quiz.title);
+        setSessionStatus(result.session.status);
         setEntries(
           result.leaderboard.map((entry) => ({
             id: entry.participantId,
@@ -50,13 +59,16 @@ export function ResultsPage() {
         );
       } catch (loadError) {
         setError(getErrorMessage(loadError));
+      } finally {
+        setIsLoading(false);
       }
     };
 
     void loadResults();
   }, [roomId]);
 
-  const displayError = error || (!roomId ? "Session ID is missing" : "");
+  const displayError =
+    error || (!roomId ? "Не указан идентификатор сессии" : "");
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-12">
@@ -71,7 +83,7 @@ export function ResultsPage() {
             {destinationLabel}
           </Button>
           <h1 className="text-xl font-bold tracking-tight text-zinc-900">
-            Final Results
+            Итоговые результаты
           </h1>
         </div>
 
@@ -80,22 +92,38 @@ export function ResultsPage() {
             <Trophy className="h-12 w-12 text-yellow-600" />
           </div>
           <h2 className="text-3xl font-bold text-zinc-900">
-            Session Complete!
+            {sessionStatus === "FINISHED"
+              ? "Сессия завершена"
+              : sessionStatus === "CANCELLED"
+                ? "Сессия отменена"
+                : "Результаты квиза"}
           </h2>
           <p className="text-lg font-medium text-zinc-500">
             {quizTitle}
           </p>
         </div>
 
-        {displayError ? (
+        {isLoading ? (
+          <p className="text-center text-sm text-zinc-500">
+            Загрузка результатов...
+          </p>
+        ) : displayError ? (
           <p className="rounded-md bg-red-50 px-4 py-3 text-center text-sm text-red-700">
             {displayError}
+          </p>
+        ) : sessionStatus === "CANCELLED" ? (
+          <p className="text-center text-sm text-zinc-500">
+            Эта сессия была отменена.
+          </p>
+        ) : sessionStatus !== "FINISHED" ? (
+          <p className="text-center text-sm text-zinc-500">
+            Результаты появятся после завершения квиза.
           </p>
         ) : entries.length > 0 ? (
           <LeaderboardTable entries={entries} />
         ) : (
           <p className="text-center text-sm text-zinc-500">
-            Loading results...
+            Результатов пока нет.
           </p>
         )}
 

@@ -66,7 +66,7 @@ export function CreateQuizPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-4">
         <Button
-          aria-label="Go back"
+          aria-label="Назад"
           className="px-2"
           onClick={() => navigate(-1)}
           size="sm"
@@ -76,10 +76,10 @@ export function CreateQuizPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-950">
-            Create New Quiz
+            Создание квиза
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Set up the basic details for your quiz template.
+            Укажите основные параметры нового квиза.
           </p>
         </div>
       </div>
@@ -88,25 +88,25 @@ export function CreateQuizPage() {
         <Card>
           <CardContent className="space-y-6 p-6">
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Quiz Title</span>
+              <span>Название квиза</span>
               <Input
                 onChange={(event) =>
                   setDraft({ ...draft, title: event.target.value })
                 }
-                placeholder="e.g., Q3 All-Hands Engineering Trivia"
+                placeholder="Например, Корпоративная викторина"
                 required
                 value={draft.title}
               />
             </label>
 
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Description (Optional)</span>
+              <span>Описание (необязательно)</span>
               <textarea
                 className="flex w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
                   setDraft({ ...draft, description: event.target.value })
                 }
-                placeholder="Briefly describe what this quiz is about..."
+                placeholder="Кратко опишите тематику квиза..."
                 rows={3}
                 value={draft.description}
               />
@@ -114,7 +114,7 @@ export function CreateQuizPage() {
 
             <div className="grid grid-cols-2 gap-6">
               <label className="block space-y-2 text-sm font-medium text-zinc-900">
-                <span>Visibility</span>
+                <span>Видимость</span>
                 <select
                   className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                   onChange={(event) =>
@@ -125,13 +125,13 @@ export function CreateQuizPage() {
                   }
                   value={draft.visibility}
                 >
-                  <option value="PRIVATE">Private</option>
-                  <option value="LINK_ONLY">Link only</option>
-                  <option value="PUBLIC">Public</option>
+                  <option value="PRIVATE">Приватный</option>
+                  <option value="LINK_ONLY">По ссылке</option>
+                  <option value="PUBLIC">Публичный</option>
                 </select>
               </label>
               <label className="block space-y-2 text-sm font-medium text-zinc-900">
-                <span>Default Time per Question (seconds)</span>
+                <span>Время на вопрос по умолчанию (секунды)</span>
                 <Input
                   min={5}
                   onChange={(event) =>
@@ -147,7 +147,7 @@ export function CreateQuizPage() {
             </div>
 
             <label className="block space-y-2 text-sm font-medium text-zinc-900">
-              <span>Scoring Mode</span>
+              <span>Режим начисления баллов</span>
               <select
                 className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 onChange={(event) =>
@@ -158,14 +158,14 @@ export function CreateQuizPage() {
                 }
                 value={draft.scoringMode}
               >
-                <option value="FIXED">Fixed points</option>
-                <option value="TIME_BASED">Time based</option>
+                <option value="FIXED">Фиксированные баллы</option>
+                <option value="TIME_BASED">С учётом времени</option>
               </select>
             </label>
 
             <fieldset className="space-y-3 border-t border-zinc-100 pt-4">
               <legend className="mb-3 text-sm font-medium text-zinc-900">
-                Quiz Rules
+                Правила квиза
               </legend>
               <label className="flex items-center gap-3 text-sm text-zinc-700">
                 <input
@@ -179,7 +179,7 @@ export function CreateQuizPage() {
                   }
                   type="checkbox"
                 />
-                Randomize question order
+                Перемешивать вопросы
               </label>
               <label className="flex items-center gap-3 text-sm text-zinc-700">
                 <input
@@ -193,7 +193,7 @@ export function CreateQuizPage() {
                   }
                   type="checkbox"
                 />
-                Randomize answer order
+                Перемешивать варианты ответов
               </label>
             </fieldset>
 
@@ -208,7 +208,7 @@ export function CreateQuizPage() {
         <div className="mt-6 flex justify-end">
           <Button disabled={isSubmitting} type="submit">
             <Save className="mr-2 h-4 w-4" />
-            {isSubmitting ? "Saving..." : "Save & Add Questions"}
+            {isSubmitting ? "Сохранение..." : "Сохранить и добавить вопросы"}
           </Button>
         </div>
       </form>

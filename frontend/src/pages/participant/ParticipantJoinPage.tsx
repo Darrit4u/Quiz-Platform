@@ -15,13 +15,23 @@ export function ParticipantJoinPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isJoining) {
+      return;
+    }
+
+    const normalizedCode = code.replace(/\s+/g, "").toUpperCase();
+    const normalizedName = name.trim();
+    if (!normalizedCode || !normalizedName) {
+      setError("Введите код комнаты и имя.");
+      return;
+    }
+
     setIsJoining(true);
     setError("");
 
     try {
-      const normalizedCode = code.replace(/\s+/g, "").toUpperCase();
       const session = await getSessionByCode(normalizedCode);
-      const result = await joinSession(normalizedCode, name);
+      const result = await joinSession(normalizedCode, normalizedName);
       navigate(`/participant/rooms/${session.id}/lobby`, {
         state: {
           participantName: result.participant.displayName,
@@ -39,10 +49,10 @@ export function ParticipantJoinPage() {
     <main className="flex min-h-screen flex-col justify-center bg-zinc-50 px-6 py-12">
       <div className="mx-auto w-full max-w-md text-center">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
-          Join a Session
+          Подключение к квизу
         </h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Enter the room code provided by your host.
+          Введите код комнаты, который сообщил организатор.
         </p>
       </div>
 
@@ -51,33 +61,41 @@ export function ParticipantJoinPage() {
           <CardContent className="p-8">
             <form className="space-y-6" onSubmit={handleSubmit}>
               <label className="block">
-                <span className="sr-only">Room Code</span>
+                <span className="sr-only">Код комнаты</span>
                 <Input
                   className="h-14 text-center text-2xl font-bold tracking-widest placeholder:text-zinc-300"
+                  disabled={isJoining}
                   maxLength={7}
-                  onChange={(event) => setCode(event.target.value)}
+                  onChange={(event) => {
+                    setCode(event.target.value);
+                    setError("");
+                  }}
                   placeholder="842 901"
                   required
                   value={code}
                 />
               </label>
               <label className="block">
-                <span className="sr-only">Your Name</span>
+                <span className="sr-only">Ваше имя</span>
                 <Input
                   className="h-12"
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Your Name"
+                  disabled={isJoining}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setError("");
+                  }}
+                  placeholder="Ваше имя"
                   required
                   value={name}
                 />
               </label>
               <Button
                 className="h-12 w-full text-lg"
-                disabled={isJoining}
+                disabled={isJoining || !code.trim() || !name.trim()}
                 size="lg"
                 type="submit"
               >
-                {isJoining ? "Joining..." : "Join Room"}
+                {isJoining ? "Подключение..." : "Войти в комнату"}
               </Button>
               {error && (
                 <p className="text-center text-sm text-red-600">{error}</p>

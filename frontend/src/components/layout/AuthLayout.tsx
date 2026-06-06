@@ -8,7 +8,7 @@ export function AuthLayout() {
           QuizPlatform
         </h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Professional quiz and learning sessions
+          Профессиональная платформа для квизов и обучения
         </p>
       </div>
       <div className="mx-auto mt-8 w-full max-w-md rounded-xl border border-zinc-200 bg-white px-10 py-8 shadow-sm">

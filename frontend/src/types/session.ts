@@ -40,6 +40,10 @@ export interface SessionState {
   roomCode: string;
   quizTitle: string;
   currentQuestionId: string | null;
+  currentQuestionIndex: number | null;
+  totalQuestions: number;
+  hasAnsweredCurrentQuestion: boolean;
+  canAnswerCurrentQuestion: boolean;
   currentQuestionStartedAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -76,6 +80,20 @@ export interface ApiSession {
     title: string;
     defaultTimeLimitSec?: number;
     scoringMode?: ScoringMode;
+  };
+}
+
+export interface HostedSession {
+  id: string;
+  roomCode: string;
+  status: SessionStatus;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  participantCount: number;
+  quiz: {
+    id: string;
+    title: string;
   };
 }
 
@@ -136,10 +154,13 @@ export interface SessionResults {
 export type AnswerStatus =
   | { state: "idle" }
   | { state: "pending" }
-  | {
-      state: "accepted";
-      isCorrect: boolean;
-      scoreAwarded: number;
-      currentScore: number;
-    }
+  | { state: "submitted" }
+  | { state: "accepted" }
   | { state: "rejected"; reason: string };
+
+export type SessionCommand =
+  | "start"
+  | "close"
+  | "show-answer"
+  | "next"
+  | "finish";

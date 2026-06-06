@@ -53,6 +53,7 @@ export interface Quiz {
   category?: QuizCategory | null;
   questionCount?: number;
   sessionCount?: number;
+  hasActiveSession?: boolean;
   questions?: Question[];
 }
 

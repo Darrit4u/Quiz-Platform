@@ -22,7 +22,7 @@ export const errorMiddleware: ErrorRequestHandler = (
   if (error instanceof ZodError) {
     response.status(400).json({
       error: {
-        message: "Validation failed",
+        message: "Ошибка проверки данных",
         details: error.flatten(),
       },
     });
@@ -33,7 +33,7 @@ export const errorMiddleware: ErrorRequestHandler = (
     if (error.code === "P2002") {
       response.status(409).json({
         error: {
-          message: "A record with this unique value already exists",
+          message: "Запись с таким уникальным значением уже существует",
         },
       });
       return;
@@ -42,7 +42,7 @@ export const errorMiddleware: ErrorRequestHandler = (
     if (error.code === "P2025") {
       response.status(404).json({
         error: {
-          message: "Requested record was not found",
+          message: "Запрашиваемая запись не найдена",
         },
       });
       return;
@@ -52,7 +52,7 @@ export const errorMiddleware: ErrorRequestHandler = (
   console.error(error);
   response.status(500).json({
     error: {
-      message: "Internal server error",
+      message: "Внутренняя ошибка сервера",
     },
   });
 };

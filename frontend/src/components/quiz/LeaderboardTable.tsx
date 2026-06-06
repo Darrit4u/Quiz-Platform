@@ -11,10 +11,10 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
       <table className="w-full text-left text-sm">
         <thead className="border-b border-zinc-200 bg-zinc-50 font-medium text-zinc-500">
           <tr>
-            <th className="w-24 px-6 py-4 text-center">Rank</th>
-            <th className="px-6 py-4">Participant</th>
-            <th className="px-6 py-4 text-center">Correct Answers</th>
-            <th className="px-6 py-4 text-right">Total Score</th>
+            <th className="w-24 px-6 py-4 text-center">Место</th>
+            <th className="px-6 py-4">Участник</th>
+            <th className="px-6 py-4 text-center">Правильные ответы</th>
+            <th className="px-6 py-4 text-right">Баллы</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100">

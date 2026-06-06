@@ -2,7 +2,11 @@ import { prisma } from "../../config/prisma.js";
 import { HttpError } from "../../utils/httpError.js";
 import { createAccessToken } from "../../utils/jwt.js";
 import { hashPassword, verifyPassword } from "../../utils/password.js";
-import type { LoginInput, RegisterInput } from "./auth.schemas.js";
+import type {
+  LoginInput,
+  RegisterInput,
+  UpdateProfileInput,
+} from "./auth.schemas.js";
 
 const publicUserSelect = {
   id: true,
@@ -21,7 +25,7 @@ export async function register(input: RegisterInput) {
   });
 
   if (existingUser) {
-    throw new HttpError(409, "A user with this email already exists");
+    throw new HttpError(409, "Пользователь с такой электронной почтой уже существует");
   }
 
   const passwordHash = await hashPassword(input.password);
@@ -49,7 +53,7 @@ export async function login(input: LoginInput) {
     !userWithPassword ||
     !(await verifyPassword(input.password, userWithPassword.passwordHash))
   ) {
-    throw new HttpError(401, "Invalid email or password");
+    throw new HttpError(401, "Неверная электронная почта или пароль");
   }
 
   const { passwordHash: _passwordHash, ...user } = userWithPassword;
@@ -64,8 +68,16 @@ export async function getCurrentUser(userId: string) {
   });
 
   if (!user) {
-    throw new HttpError(401, "The authenticated user no longer exists");
+    throw new HttpError(401, "Авторизованный пользователь больше не существует");
   }
 
   return user;
+}
+
+export async function updateProfile(userId: string, input: UpdateProfileInput) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { name: input.name },
+    select: publicUserSelect,
+  });
 }

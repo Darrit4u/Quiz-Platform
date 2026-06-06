@@ -36,3 +36,11 @@ export async function getCurrentUser() {
   const response = await httpClient<{ user: User }>("/auth/me");
   return response.user;
 }
+
+export async function updateProfile(name: string) {
+  const response = await httpClient<{ user: User }>("/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+  return response.user;
+}
